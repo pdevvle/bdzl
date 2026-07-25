@@ -40,7 +40,6 @@ Credentials
 Read from the environment only — never hardcode, never commit.
 
     ETSY_KEYSTRING          Etsy app keystring            (phase 1)
-    ETSY_OAUTH_TOKEN        OAuth token, scope listings_r (phase 1)
     ETSY_SHOP_ID            optional; skips shop lookup
     ETSY_SHOP_NAME          optional; used if no shop id
 
@@ -52,8 +51,26 @@ Read from the environment only — never hardcode, never commit.
     WOO_WEIGHT_UNIT         store weight unit    (default oz)
     WOO_DIMENSION_UNIT      store dimension unit (default in)
 
+Etsy authorization
+------------------
+Etsy access tokens expire after one hour, so there is nothing useful to put
+in a long-lived variable. Authorize once with the companion helper:
+
+    python3 etsy_auth.py authorize
+
+That stores an access token and a 90-day refresh token in .etsy_tokens.json
+(overridable with ETSY_TOKEN_FILE). This importer reads that store and
+refreshes automatically — including mid-run, if a long fetch outlives its
+token.
+
+    ETSY_OAUTH_TOKEN        optional escape hatch: use this exact token and
+                            do not attempt any refresh. Handy for a one-off
+                            with a token from elsewhere; it will start
+                            failing an hour after it was issued.
+
 Usage
 -----
+    python3 etsy_auth.py authorize
     python3 harleys_books_importer.py fetch
     python3 harleys_books_importer.py push --dry-run
     python3 harleys_books_importer.py push
@@ -82,6 +99,13 @@ except ImportError:  # pragma: no cover - environment problem, not a code path
         "    python3 -m pip install requests\n"
     )
     raise SystemExit(2)
+
+# The OAuth helper doubles as the token store. It is optional: without it the
+# importer still runs from an explicit ETSY_OAUTH_TOKEN.
+try:
+    import etsy_auth
+except ImportError:  # pragma: no cover
+    etsy_auth = None
 
 
 # --------------------------------------------------------------------------
@@ -295,17 +319,53 @@ class _HttpClient:
 
 
 # --------------------------------------------------------------------------
-# Phase 1 — Etsy
+# Etsy authorization
 # --------------------------------------------------------------------------
+
+
+def _resolve_oauth_token(keystring, token_file=None):
+    """Return (access_token, refresh_callback).
+
+    An explicit ETSY_OAUTH_TOKEN wins and disables refreshing — the caller
+    owns that token's lifetime. Otherwise the token store written by
+    etsy_auth.py is used, and the callback can mint a fresh token mid-run.
+    """
+    explicit = os.environ.get("ETSY_OAUTH_TOKEN")
+    if explicit:
+        _log("Using ETSY_OAUTH_TOKEN from the environment (no auto-refresh).")
+        return explicit, None
+
+    if etsy_auth is None:
+        raise ImporterError(
+            "etsy_auth.py is not importable and ETSY_OAUTH_TOKEN is not set, "
+            "so there is no way to authenticate to Etsy. Keep etsy_auth.py "
+            "beside this file and run:\n    python3 etsy_auth.py authorize"
+        )
+
+    try:
+        token = etsy_auth.resolve_access_token(keystring=keystring, path=token_file)
+    except etsy_auth.AuthError as exc:
+        raise ImporterError(str(exc))
+
+    def _refresh():
+        try:
+            return etsy_auth.resolve_access_token(
+                keystring=keystring, path=token_file, force_refresh=True
+            )
+        except etsy_auth.AuthError as exc:
+            raise ImporterError(str(exc))
+
+    return token, _refresh
 
 
 class EtsyClient(_HttpClient):
     min_interval = ETSY_MIN_INTERVAL
 
-    def __init__(self, keystring, oauth_token):
+    def __init__(self, keystring, oauth_token, refresh_callback=None):
         super().__init__()
         self.keystring = keystring
         self.oauth_token = oauth_token
+        self.refresh_callback = refresh_callback
 
     def _headers(self):
         headers = {
@@ -317,13 +377,22 @@ class EtsyClient(_HttpClient):
             headers["Authorization"] = "Bearer %s" % self.oauth_token
         return headers
 
-    def get(self, path, params=None):
+    def get(self, path, params=None, _retried=False):
         url = "%s%s" % (ETSY_API_BASE, path)
         response = self.request("GET", url, headers=self._headers(), params=params)
+
+        if response.status_code == 401 and self.refresh_callback and not _retried:
+            # A long fetch can outlive its one-hour token. Refresh once and
+            # carry on rather than losing the whole run.
+            _warn("Etsy access token rejected (401) — refreshing and retrying.")
+            self.oauth_token = self.refresh_callback()
+            return self.get(path, params=params, _retried=True)
+
         if response.status_code == 401:
             raise ImporterError(
-                "Etsy returned 401 for %s. The OAuth token is missing, expired, "
-                "or lacks the listings_r scope." % path
+                "Etsy returned 401 for %s. The token is expired or lacks the "
+                "listings_r scope. Re-authorize:\n"
+                "    python3 etsy_auth.py authorize" % path
             )
         if response.status_code == 403:
             raise ImporterError(
@@ -373,8 +442,9 @@ class EtsyClient(_HttpClient):
             return int(me["shop_id"]), (shop or {}).get("shop_name")
 
         raise ImporterError(
-            "Could not determine the Etsy shop. Set ETSY_SHOP_ID or "
-            "ETSY_SHOP_NAME, or use a token that owns a shop."
+            "Could not determine the Etsy shop. The token may belong to an "
+            "account with no shop — check that Harley, not you, approved the "
+            "consent screen. Otherwise set ETSY_SHOP_ID or ETSY_SHOP_NAME."
         )
 
     def fetch_sections(self, shop_id):
@@ -615,11 +685,11 @@ def _download_images(item, images_dir, refresh=False):
 
 def cmd_fetch(args):
     keystring = _env("ETSY_KEYSTRING", required=True)
-    oauth_token = _env("ETSY_OAUTH_TOKEN", required=True)
+    oauth_token, refresh_callback = _resolve_oauth_token(keystring, args.token_file)
     shop_id = args.shop_id or _env("ETSY_SHOP_ID")
     shop_name = args.shop_name or _env("ETSY_SHOP_NAME")
 
-    client = EtsyClient(keystring, oauth_token)
+    client = EtsyClient(keystring, oauth_token, refresh_callback)
 
     _log("Resolving shop…")
     shop_id, shop_name = client.resolve_shop(shop_id, shop_name)
@@ -1175,8 +1245,8 @@ def build_parser():
         description="Two-phase Etsy -> WooCommerce catalog importer for HarleysBooks.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "Credentials come from the environment. See the module docstring\n"
-            "for the full list of variables."
+            "Credentials come from the environment. Authorize Etsy once with\n"
+            "`python3 etsy_auth.py authorize`; tokens refresh automatically."
         ),
     )
     sub = parser.add_subparsers(dest="command")
@@ -1191,6 +1261,10 @@ def build_parser():
     )
     fetch.add_argument("--shop-id", help="override ETSY_SHOP_ID")
     fetch.add_argument("--shop-name", help="override ETSY_SHOP_NAME")
+    fetch.add_argument(
+        "--token-file", help="Etsy token store (default: $ETSY_TOKEN_FILE or "
+        ".etsy_tokens.json)"
+    )
     fetch.add_argument(
         "--images-dir",
         default=DEFAULT_IMAGE_DIR,
