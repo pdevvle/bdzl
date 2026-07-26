@@ -1,60 +1,100 @@
-=== Bedazzle MCP Extension ===
+=== Bedazzle MCP Tools ===
 
-Adds server-side tools to the AI Engine MCP connector on bedazzlekits.com.
+Companion plugin for AI Engine that adds server-management tools to the MCP
+connector on bedazzlekits.com. Ported from the working "Priority Print MCP
+Tools" plugin, rebranded (bdz_ prefix) and re-scoped for this store.
 
 WHY THIS EXISTS
 ---------------
 The stock AI Engine MCP connector (the 58 tools currently exposed) can manage
-posts, products-as-posts, meta, terms, media, options and blocks, but it cannot
-read or write files on the server. That gap blocks the two core build tasks:
-scaffolding the theme and hand-writing the product page. This plugin adds the
-missing capability by registering extra tools through AI Engine's own extension
-filters (mwai_mcp_tools + mwai_mcp_callback).
+posts, products-as-posts, meta, terms, media, options and blocks, but it
+cannot:
+  - read or write files on the server  -> blocks the theme scaffold and the
+    hand-written product page (brief tasks 4 and 6)
+  - show a WooCommerce-aware product/order view -> makes importer verification
+    (task 5) and order QA (task 9) guesswork
+  - run core/plugin/theme updates
+
+This plugin closes those gaps by registering extra MCP tools through AI
+Engine's own extension filters (mwai_mcp_tools + mwai_mcp_callback), returning
+proper JSON-RPC result envelopes.
 
 The connector cannot install this itself — there is no file-write tool to
-bootstrap from. It has to be placed on the server once, by hand. After that,
-the connector gains theme-file access and the rest of the build is
-self-serviceable.
+bootstrap from. It is placed on the server once, by hand (below). After that,
+bdz_plugin_write_file can add later tool groups (nav menus, shipping zones,
+Astra settings) over the wire, no more manual installs.
 
-WHAT IT ADDS (v0.1.0 — first move only)
----------------------------------------
-- bdz_mcp_ping        health check; returns version + the tools it registered
-- bdz_theme_list_files list files in a theme folder (recursive)
-- bdz_theme_read_file  read one file from a theme folder
-- bdz_theme_write_file create/overwrite a text file, creating folders as needed
-                       (this is how a new child theme gets scaffolded)
+TOOLS ADDED (v1.0.0)
+--------------------
+Health:
+  bdz_mcp_ping              version + registered tool list (call first to verify)
 
-Writes are scoped to the WordPress theme root, path-traversal is rejected, and
-only source-file extensions are writable (php, css, js, json, html, txt, md,
-svg, pot, po). Every tool requires edit_themes/manage_options on the MCP user.
+WooCommerce (read):
+  bdz_woo_list_products     supports category_slug / search / sku / status / limit
+  bdz_woo_get_product       full product incl. sku, price, stock, images, meta
+  bdz_woo_list_categories
+  bdz_woo_get_category
+  bdz_woo_list_orders
+  bdz_woo_get_order         line items, billing/shipping, notes
 
-Later moves add their own files under inc/ (WooCommerce product/order views,
-nav menus, shipping zones, Astra settings). Not in this version — one move at
-a time.
+WooCommerce (write):
+  bdz_woo_update_product
+  bdz_woo_update_order_status
+  bdz_woo_add_order_note
+
+Theme files (scoped to the child theme; default "astra-child"):
+  bdz_theme_list_files      exists:false when the theme isn't scaffolded yet
+  bdz_theme_read_file
+  bdz_theme_write_file      creates the theme folder + subfolders on first write
+
+Plugin files (scoped to wp-content/plugins):
+  bdz_plugin_list_files
+  bdz_plugin_read_file
+  bdz_plugin_write_file
+  bdz_plugin_download_url   https only, 12MB cap, 60s timeout
+
+Updates:
+  bdz_wp_check_updates
+  bdz_wp_get_plugin_versions
+  bdz_wp_update_plugin
+  bdz_wp_update_theme
+  bdz_wp_update_core
+
+SAFETY MODEL
+------------
+  - Theme writes restricted to one theme dir (default "astra-child"; override
+    with:  define('BDZ_MCP_THEME_SLUG', 'your-child-theme');  in wp-config.php).
+    The folder may not exist yet — the first write scaffolds it.
+  - Plugin writes/downloads restricted to wp-content/plugins.
+  - Path traversal blocked via realpath() containment.
+  - Read/write ops carry MCP annotations (readOnlyHint / destructiveHint).
+  - Update tools wrap WordPress's own Plugin/Theme/Core upgraders.
+  - Auth is handled by AI Engine's MCP layer (bearer token) — same trust model
+    as the tools already exposed.
 
 INSTALL (Preston, one time)
 ---------------------------
-1. Copy the whole `bedazzle-mcp/` folder to:
-       wp-content/plugins/bedazzle-mcp/
+1. Copy the `bedazzle-mcp/` folder to:  wp-content/plugins/bedazzle-mcp/
    via SFTP, the Cloudways file manager, or wp-admin > Plugins > Add New >
    Upload (zip the folder first for the upload route).
-2. Activate "Bedazzle MCP Extension" in wp-admin > Plugins.
+2. Activate "Bedazzle MCP Tools" in wp-admin > Plugins.
 3. If AI Engine caches its MCP tool list, toggle the MCP module off/on under
-   Meow Apps > AI Engine > Settings, or just reload — the tool list is built
-   from the filter on each request.
+   Meow Apps > AI Engine > Settings (the list is otherwise rebuilt per request).
 
 VERIFY (through the connector, after activation)
 ------------------------------------------------
-Call bdz_mcp_ping. A healthy response looks like:
-   { "extension": "Bedazzle MCP Extension", "version": "0.1.0",
-     "ai_engine": "...", "tools": [ "bdz_mcp_ping", "bdz_theme_list_files",
-     "bdz_theme_read_file", "bdz_theme_write_file" ], ... }
-If the ping tool is not visible to the connector, AI Engine has not picked up
-the filter yet — re-check activation and the MCP module toggle.
+Call bdz_mcp_ping. Healthy response includes plugin/version, ai_engine version,
+woocommerce:true, theme_slug:"astra-child", and the full tools list. If the
+connector can't see bdz_mcp_ping, AI Engine hasn't picked up the filter yet —
+re-check activation and the MCP module toggle.
 
 NOTES
 -----
-- No dependencies beyond WordPress + AI Engine. Plain PHP, no build step.
-- On this install the active theme is Astra with no child theme, so the first
-  real use is:  bdz_theme_write_file(theme:"astra-child", relative_path:
-  "style.css", ...) to scaffold the child theme the build needs.
+  - No dependencies beyond WordPress + AI Engine + WooCommerce. Plain PHP,
+    no build step.
+  - Active theme on this install is Astra (parent) with no child theme, so the
+    first real use is scaffolding astra-child:
+      bdz_theme_write_file(relative_path:"style.css", contents:"/* Theme Name:
+      Astra Child ... Template: astra */")
+      bdz_theme_write_file(relative_path:"functions.php", contents:"<?php ...")
+    then activate Astra Child.
