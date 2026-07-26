@@ -12,4 +12,7 @@ __pycache__/
 .venv/
 venv/
 
+# Built plugin zip — regenerated from wp-plugin/bedazzle-mcp/, not source.
+wp-plugin/*.zip
+
 .DS_Store
