@@ -13,3 +13,8 @@ __pycache__/
 venv/
 
 .DS_Store
+
+# Sync run artifacts
+sync_report.json
+.etsy_sync.lock
+sync.log

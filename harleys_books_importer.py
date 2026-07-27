@@ -1051,9 +1051,11 @@ def cmd_push(args):
     items = catalog["items"]
     if args.limit:
         items = items[: args.limit]
+    skipped_review = 0
     if args.skip_review:
         skipped = [i for i in items if i.get("review")]
         items = [i for i in items if not i.get("review")]
+        skipped_review = len(skipped)
         for item in skipped:
             _log("SKIP (review) %s  %s" % (item["sku"], item["title"][:60]))
 
@@ -1163,8 +1165,23 @@ def cmd_push(args):
             "changed for those." % skipped_type
         )
 
+    drafted = []
     if args.deactivate_missing and not args.dry_run:
-        _deactivate_missing(client, catalog["items"])
+        drafted = _deactivate_missing(client, catalog["items"])
+
+    # Structured result for orchestration (etsy_sync.py). The CLI contract is
+    # unchanged: callers that only care about success still read the exit code.
+    args.summary = {
+        "considered": len(items),
+        "created": created,
+        "updated": updated,
+        "failed": failed,
+        "skipped_not_simple": skipped_type,
+        "skipped_review": skipped_review,
+        "images_unchanged": unchanged_images,
+        "drafted_missing": drafted,
+        "dry_run": bool(args.dry_run),
+    }
 
     return 1 if failed else 0
 
@@ -1187,15 +1204,18 @@ def _deactivate_missing(client, items):
 
     if not stale:
         _log("  none found.")
-        return
+        return []
 
+    drafted = []
     for product in stale:
         try:
             client.update_product(product["id"], {"status": "draft"})
+            drafted.append(product["sku"])
             _log("  drafted #%s %s — %s"
                  % (product["id"], product["sku"], (product.get("name") or "")[:50]))
         except ImporterError as exc:
             _warn("could not draft #%s: %s" % (product["id"], exc))
+    return drafted
 
 
 # --------------------------------------------------------------------------
