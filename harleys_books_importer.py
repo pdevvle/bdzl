@@ -1066,7 +1066,7 @@ def cmd_push(args):
 
     client = WooClient(store_url, consumer_key, consumer_secret)
 
-    created = updated = unchanged_images = failed = 0
+    created = updated = unchanged_images = failed = skipped_type = 0
     seen_ids = set()
 
     for index, item in enumerate(items, start=1):
@@ -1084,6 +1084,21 @@ def cmd_push(args):
         except ImporterError as exc:
             _warn("%s lookup failed: %s" % (sku, exc))
             failed += 1
+            continue
+
+        # Everything here is pushed as a simple product. Sending that at an
+        # existing variable product converts it and orphans its variations,
+        # taking the variation pricing with them. Refuse by default — an
+        # adopted legacy product is exactly where this bites.
+        existing_type = (existing or {}).get("type")
+        if existing and existing_type not in (None, "", "simple") and not args.allow_type_change:
+            _warn(
+                "%s is a '%s' product in the store (#%s) — pushing would convert "
+                "it to simple and orphan its variations. Skipping. Override with "
+                "--allow-type-change once you have decided what happens to them."
+                % (sku, existing_type, existing["id"])
+            )
+            skipped_type += 1
             continue
 
         body = _normalize_product(item, options)
@@ -1142,6 +1157,11 @@ def cmd_push(args):
         "Done. created=%d updated=%d failed=%d (images unchanged on %d update(s))"
         % (created, updated, failed, unchanged_images)
     )
+    if skipped_type:
+        _log(
+            "  %d item(s) skipped: the store product is not simple. Nothing was "
+            "changed for those." % skipped_type
+        )
 
     if args.deactivate_missing and not args.dry_run:
         _deactivate_missing(client, catalog["items"])
@@ -1317,6 +1337,12 @@ def build_parser():
     )
     push.add_argument(
         "--skip-review", action="store_true", help="skip items flagged REVIEW"
+    )
+    push.add_argument(
+        "--allow-type-change",
+        action="store_true",
+        help="permit converting an existing variable product to simple "
+        "(orphans its variations)",
     )
     push.add_argument(
         "--deactivate-missing",
