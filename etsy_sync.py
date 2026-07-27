@@ -378,6 +378,216 @@ def _print_summary(report, report_path):
     _log("  report: %s" % report_path)
 
 
+# --------------------------------------------------------------------------
+# Preflight — is this machine actually wired up?
+# --------------------------------------------------------------------------
+
+_MARK = {"ok": "ok  ", "warn": "WARN", "fail": "FAIL", "skip": "--  "}
+
+
+class _Report:
+    """Collects check results so the exit code reflects the worst of them."""
+
+    def __init__(self):
+        self.rows = []
+
+    def add(self, level, message, detail=None):
+        self.rows.append({"level": level, "message": message, "detail": detail or []})
+        _log("  [%s] %s" % (_MARK[level], message))
+        for line in detail or []:
+            _log("           %s" % line)
+        return level
+
+    def section(self, title):
+        _log("")
+        _log(title)
+
+    def worst(self):
+        for level in ("fail", "warn"):
+            if any(r["level"] == level for r in self.rows):
+                return level
+        return "ok"
+
+
+def _check_etsy(report, args):
+    report.section("Etsy")
+
+    keystring = os.environ.get("ETSY_KEYSTRING")
+    if not keystring:
+        report.add("fail", "ETSY_KEYSTRING is not set",
+                   ["export ETSY_KEYSTRING='...' — the app keystring"])
+        return
+    report.add("ok", "ETSY_KEYSTRING is set")
+
+    try:
+        import etsy_auth
+    except ImportError:
+        report.add("fail", "etsy_auth.py is not importable from here")
+        return
+
+    token = None
+    if os.environ.get("ETSY_OAUTH_TOKEN"):
+        token = os.environ["ETSY_OAUTH_TOKEN"]
+        report.add("warn", "using ETSY_OAUTH_TOKEN from the environment",
+                   ["This token will not be refreshed and dies an hour after issue.",
+                    "For unattended sync, authorize instead: python3 etsy_auth.py authorize"])
+    else:
+        record = None
+        try:
+            record = etsy_auth.load_tokens(args.token_file)
+        except etsy_auth.AuthError as exc:
+            report.add("fail", "token store unreadable: %s" % exc)
+            return
+        if not record:
+            report.add("fail", "no Etsy tokens stored",
+                       ["Harley must consent once: python3 etsy_auth.py authorize"])
+            return
+
+        user = record.get("etsy_user_id") or "unknown"
+        left = (record.get("expires_at") or 0) - time.time()
+        refresh_left = (record.get("refresh_expires_at") or 0) - time.time()
+        report.add("ok", "token store present — Etsy user %s" % user,
+                   ["access token %s" % ("valid" if left > 0 else "stale, will refresh"),
+                    "refresh token %s" % (
+                        "expires in %.0f day(s)" % (refresh_left / 86400)
+                        if refresh_left > 0 else "EXPIRED — re-consent needed")])
+        if refresh_left <= 0:
+            report.add("fail", "refresh token has expired",
+                       ["python3 etsy_auth.py authorize"])
+            return
+        try:
+            token = etsy_auth.resolve_access_token(keystring=keystring,
+                                                   path=args.token_file)
+        except etsy_auth.AuthError as exc:
+            report.add("fail", "could not obtain a live access token: %s" % exc)
+            return
+
+    client = imp.EtsyClient(keystring, token)
+    try:
+        client.get("/openapi-ping")
+        report.add("ok", "Etsy API reachable")
+    except imp.ImporterError as exc:
+        report.add("fail", "Etsy API not reachable: %s" % exc,
+                   ["If this is a network policy denial rather than a bad key,",
+                    "this machine cannot reach Etsy and sync cannot run here."])
+        return
+
+    try:
+        shop_id, shop_name = client.resolve_shop(
+            os.environ.get("ETSY_SHOP_ID"), os.environ.get("ETSY_SHOP_NAME"))
+    except imp.ImporterError as exc:
+        report.add("fail", "shop lookup failed: %s" % exc)
+        return
+
+    detail = []
+    try:
+        page = client.get("/shops/%s/listings" % shop_id,
+                          params={"state": "active", "limit": 1})
+        count = (page or {}).get("count")
+        if count is not None:
+            detail.append("%s active listing(s)" % count)
+    except imp.ImporterError as exc:
+        detail.append("could not count listings: %s" % exc)
+    report.add("ok", "shop resolves: %s (%s)" % (shop_name or "unnamed", shop_id), detail)
+
+
+def _check_woo(report, args):
+    report.section("WooCommerce")
+
+    store_url = os.environ.get("WOO_STORE_URL")
+    key = os.environ.get("WOO_CONSUMER_KEY")
+    secret = os.environ.get("WOO_CONSUMER_SECRET")
+    missing = [n for n, v in (("WOO_STORE_URL", store_url),
+                              ("WOO_CONSUMER_KEY", key),
+                              ("WOO_CONSUMER_SECRET", secret)) if not v]
+    if missing:
+        report.add("fail", "missing: %s" % ", ".join(missing),
+                   ["WooCommerce -> Settings -> Advanced -> REST API -> Add key",
+                    "Permissions must be Read/Write."])
+        return
+    report.add("ok", "store URL %s" % store_url)
+
+    client = imp.WooClient(store_url, key, secret)
+    try:
+        client.call("GET", "/products", params={"per_page": 1})
+    except imp.ImporterError as exc:
+        report.add("fail", "credentials rejected: %s" % exc)
+        return
+    report.add("ok", "credentials accepted (%s)"
+               % ("query-string auth" if client._use_query_auth else "basic auth"))
+
+    try:
+        products = list(client.iter_products())
+    except imp.ImporterError as exc:
+        report.add("warn", "could not enumerate products: %s" % exc)
+        return
+
+    imported = [p for p in products if (p.get("sku") or "").startswith(imp.SKU_PREFIX)]
+    no_sku = [p for p in products if not (p.get("sku") or "").strip()]
+    not_simple = [p for p in imported if p.get("type") not in (None, "", "simple")]
+
+    report.add("ok", "%d product(s) in the store, %d already carry etsy- SKUs"
+               % (len(products), len(imported)))
+
+    if no_sku:
+        report.add(
+            "warn",
+            "%d product(s) have no SKU — a first import can duplicate these"
+            % len(no_sku),
+            ["#%s %s (%s)" % (p["id"], (p.get("name") or "")[:48], p.get("type"))
+             for p in no_sku[:10]]
+            + ["Adopt one by setting its SKU to the matching etsy-<listing_id>,",
+               "or draft it and let the importer create a clean product."],
+        )
+
+    if not_simple:
+        report.add(
+            "warn",
+            "%d adopted product(s) are not simple — push will skip them"
+            % len(not_simple),
+            ["#%s %s (%s)" % (p["id"], (p.get("name") or "")[:48], p.get("type"))
+             for p in not_simple[:10]],
+        )
+
+
+def cmd_doctor(args):
+    report = _Report()
+
+    _log("Preflight — Etsy -> WooCommerce")
+
+    report.section("Environment")
+    report.add("ok", "python %s" % sys.version.split()[0])
+    try:
+        import requests as _rq
+        report.add("ok", "requests %s" % _rq.__version__)
+    except ImportError:
+        report.add("fail", "requests is not installed")
+    here = os.path.dirname(os.path.abspath(__file__))
+    for name in ("harleys_books_importer.py", "etsy_auth.py"):
+        if os.path.exists(os.path.join(here, name)):
+            report.add("ok", "%s present" % name)
+        else:
+            report.add("fail", "%s missing" % name)
+    buffer_value = os.environ.get("STOCK_BUFFER") or "0"
+    report.add("ok", "STOCK_BUFFER = %s" % buffer_value)
+
+    if not args.woo_only:
+        _check_etsy(report, args)
+    if not args.etsy_only:
+        _check_woo(report, args)
+
+    worst = report.worst()
+    _log("")
+    if worst == "ok":
+        _log("Result: READY — a sync run should work.")
+        return 0
+    if worst == "warn":
+        _log("Result: READY WITH WARNINGS — read them before the first import.")
+        return 0
+    _log("Result: NOT READY — fix the failures above.")
+    return 1
+
+
 def cmd_report(args):
     if not os.path.exists(args.report):
         _log("No report at %s. Run a sync first." % args.report)
@@ -442,6 +652,14 @@ def build_parser():
     run.add_argument("--dry-run", action="store_true",
                      help="rehearse the push without writing to the store")
     run.set_defaults(func=cmd_run)
+
+    doctor = sub.add_parser(
+        "doctor", help="check this machine is wired up; writes nothing"
+    )
+    doctor.add_argument("--token-file", help="Etsy token store")
+    doctor.add_argument("--etsy-only", action="store_true", help="skip the store checks")
+    doctor.add_argument("--woo-only", action="store_true", help="skip the Etsy checks")
+    doctor.set_defaults(func=cmd_doctor)
 
     report = sub.add_parser("report", help="re-read the last run report")
     report.add_argument("--report", default=DEFAULT_REPORT)

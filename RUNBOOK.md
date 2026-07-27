@@ -53,6 +53,24 @@ the redirect URL back.
 
 ---
 
+## Preflight
+
+Before the first import, and any time something looks wrong:
+
+```bash
+python3 etsy_sync.py doctor
+```
+
+Read-only — it never writes to Etsy or the store. It checks the environment,
+the token store (including *which* Etsy account consented and how long the
+refresh token has left), that Etsy is reachable and the shop resolves, that
+the Woo credentials are accepted, and it warns about store products with no
+SKU that a first import could duplicate.
+
+Exit 0 means ready, 1 means not. Warnings do not block.
+
+---
+
 ## First import
 
 Go one step at a time. Do not skip the dry run.
