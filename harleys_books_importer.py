@@ -193,6 +193,19 @@ def _money(value):
         return None, None
 
 
+def _escape_html(text):
+    """Escape exactly the way WordPress's esc_html() does.
+
+    Python renders an apostrophe as &#x27; and PHP as &#039;. Both are correct
+    and render identically, but the stored post_content would differ between
+    this importer and the WordPress plugin for the same listing — every
+    description carries an apostrophe, so alternating between the two tools
+    would rewrite the whole catalogue. WordPress is the destination, so its
+    spelling wins.
+    """
+    return html.escape(text).replace("&#x27;", "&#039;")
+
+
 def _text_to_html(text):
     """Etsy descriptions are plain text. Woo wants HTML. Keep it minimal."""
     if not text:
@@ -202,7 +215,7 @@ def _text_to_html(text):
     for block in blocks:
         if not block:
             continue
-        out.append("<p>%s</p>" % html.escape(block).replace("\n", "<br />"))
+        out.append("<p>%s</p>" % _escape_html(block).replace("\n", "<br />"))
     return "\n".join(out)
 
 
