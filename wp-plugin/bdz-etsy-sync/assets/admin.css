@@ -1,0 +1,147 @@
+/* Etsy Sync admin screen. Hand-written; no framework, no build step. */
+
+.bdz-etsy .bdz-grid {
+	display: grid;
+	grid-template-columns: repeat( auto-fit, minmax( 22rem, 1fr ) );
+	gap: 1rem;
+	margin-bottom: 1rem;
+}
+
+.bdz-etsy .bdz-card {
+	background: #fff;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	padding: 1rem 1.25rem 1.25rem;
+	margin-bottom: 1rem;
+}
+
+.bdz-etsy .bdz-card h2 {
+	margin-top: 0;
+	font-size: 1.05rem;
+}
+
+.bdz-etsy .bdz-card h3 {
+	font-size: 0.95rem;
+	margin-bottom: 0.25rem;
+}
+
+.bdz-etsy .bdz-checks {
+	margin: 0 0 1rem;
+	padding: 0;
+	list-style: none;
+}
+
+.bdz-etsy .bdz-checks li {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.5rem;
+	padding: 0.35rem 0;
+	border-bottom: 1px solid #f0f0f1;
+	line-height: 1.5;
+}
+
+.bdz-etsy .bdz-checks li:last-child {
+	border-bottom: 0;
+}
+
+.bdz-etsy .bdz-badge {
+	flex: 0 0 auto;
+	font-size: 0.7rem;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	padding: 0.1rem 0.4rem;
+	border-radius: 3px;
+	background: #f0f0f1;
+	color: #50575e;
+	min-width: 3.1rem;
+	text-align: center;
+}
+
+.bdz-etsy .bdz-ok .bdz-badge {
+	background: #edfaef;
+	color: #00652c;
+}
+
+.bdz-etsy .bdz-warn .bdz-badge {
+	background: #fcf3e3;
+	color: #8a5700;
+}
+
+.bdz-etsy .bdz-fail .bdz-badge {
+	background: #fcebea;
+	color: #a30000;
+}
+
+.bdz-etsy .bdz-hint {
+	color: #50575e;
+	font-size: 0.85rem;
+	margin: 0.5rem 0 0;
+}
+
+.bdz-etsy .bdz-hint code {
+	display: inline-block;
+	margin-top: 0.2rem;
+	word-break: break-all;
+}
+
+.bdz-etsy .bdz-connect,
+.bdz-etsy .bdz-run {
+	margin: 0.75rem 0 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+.bdz-etsy .bdz-cancel {
+	margin-left: auto;
+}
+
+.bdz-etsy .bdz-progress {
+	margin-top: 1rem;
+}
+
+.bdz-etsy .bdz-bar {
+	height: 0.5rem;
+	background: #f0f0f1;
+	border-radius: 999px;
+	overflow: hidden;
+}
+
+.bdz-etsy .bdz-bar span {
+	display: block;
+	height: 100%;
+	width: 0;
+	background: #2271b1;
+	transition: width 0.3s ease;
+}
+
+.bdz-etsy .bdz-message {
+	margin: 0.5rem 0 0;
+	font-weight: 600;
+}
+
+.bdz-etsy .bdz-stats {
+	margin: 0.15rem 0 0;
+	color: #50575e;
+	font-size: 0.85rem;
+}
+
+.bdz-etsy .bdz-log {
+	max-height: 22rem;
+	overflow: auto;
+	background: #1d2327;
+	color: #e6e6e6;
+	padding: 0.75rem 1rem;
+	border-radius: 4px;
+	font-size: 0.8rem;
+	line-height: 1.6;
+	white-space: pre-wrap;
+	word-break: break-word;
+	margin: 0;
+}
+
+@media screen and ( max-width: 782px ) {
+	.bdz-etsy .bdz-grid {
+		grid-template-columns: 1fr;
+	}
+}
