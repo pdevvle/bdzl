@@ -55,8 +55,21 @@ class BDZ_Etsy_Admin {
 		if ( false === strpos( (string) $hook, self::PAGE ) ) {
 			return;
 		}
-		wp_enqueue_style( 'bdz-etsy-admin', BDZ_ETSY_URL . 'assets/admin.css', array(), BDZ_ETSY_VERSION );
-		wp_enqueue_script( 'bdz-etsy-admin', BDZ_ETSY_URL . 'assets/admin.js', array(), BDZ_ETSY_VERSION, true );
+		// The single-file build has no assets/ directory: build-single-file.py
+		// compiles the CSS and JS into a BDZ_Etsy_Assets class instead. Its
+		// presence is the signal for which form this plugin is running in.
+		if ( class_exists( 'BDZ_Etsy_Assets' ) ) {
+			wp_register_style( 'bdz-etsy-admin', false, array(), BDZ_ETSY_VERSION );
+			wp_enqueue_style( 'bdz-etsy-admin' );
+			wp_add_inline_style( 'bdz-etsy-admin', BDZ_Etsy_Assets::css() );
+
+			wp_register_script( 'bdz-etsy-admin', false, array(), BDZ_ETSY_VERSION, true );
+			wp_enqueue_script( 'bdz-etsy-admin' );
+			wp_add_inline_script( 'bdz-etsy-admin', BDZ_Etsy_Assets::js() );
+		} else {
+			wp_enqueue_style( 'bdz-etsy-admin', BDZ_ETSY_URL . 'assets/admin.css', array(), BDZ_ETSY_VERSION );
+			wp_enqueue_script( 'bdz-etsy-admin', BDZ_ETSY_URL . 'assets/admin.js', array(), BDZ_ETSY_VERSION, true );
+		}
 		wp_localize_script(
 			'bdz-etsy-admin',
 			'bdzEtsy',
