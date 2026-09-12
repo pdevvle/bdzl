@@ -40,6 +40,7 @@ Credentials
 Read from the environment only — never hardcode, never commit.
 
     ETSY_KEYSTRING          Etsy app keystring            (phase 1)
+    ETSY_SHARED_SECRET      Etsy app shared secret        (phase 1)
     ETSY_SHOP_ID            optional; skips shop lookup
     ETSY_SHOP_NAME          optional; used if no shop id
 
@@ -374,15 +375,29 @@ def _resolve_oauth_token(keystring, token_file=None):
 class EtsyClient(_HttpClient):
     min_interval = ETSY_MIN_INTERVAL
 
-    def __init__(self, keystring, oauth_token, refresh_callback=None):
+    def __init__(self, keystring, oauth_token, refresh_callback=None,
+                 shared_secret=None):
         super().__init__()
         self.keystring = keystring
+        self.shared_secret = shared_secret
         self.oauth_token = oauth_token
         self.refresh_callback = refresh_callback
 
+    def api_key(self):
+        """The value Etsy wants in x-api-key.
+
+        Not the same as the OAuth client_id. Etsy refuses the keystring alone
+        with "Shared secret is required in x-api-key header" and the secret
+        alone with "incorrect shared secret for API key"; it wants both,
+        colon-joined. Confirmed against the live API.
+        """
+        if self.shared_secret:
+            return "%s:%s" % (self.keystring, self.shared_secret)
+        return self.keystring
+
     def _headers(self):
         headers = {
-            "x-api-key": self.keystring,
+            "x-api-key": self.api_key(),
             "Accept": "application/json",
             "User-Agent": "harleys-books-importer/1.0",
         }
@@ -702,7 +717,8 @@ def cmd_fetch(args):
     shop_id = args.shop_id or _env("ETSY_SHOP_ID")
     shop_name = args.shop_name or _env("ETSY_SHOP_NAME")
 
-    client = EtsyClient(keystring, oauth_token, refresh_callback)
+    client = EtsyClient(keystring, oauth_token, refresh_callback,
+                        shared_secret=_env("ETSY_SHARED_SECRET"))
 
     _log("Resolving shop…")
     shop_id, shop_name = client.resolve_shop(shop_id, shop_name)

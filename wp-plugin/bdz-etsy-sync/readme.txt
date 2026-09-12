@@ -29,9 +29,9 @@ recommended posture — a database dump then carries nothing usable:
 
 The field becomes read-only when the constant is defined.
 
-The Etsy app's **shared secret is never used**. This uses OAuth with PKCE, which
-authenticates with a one-time code verifier instead, so the secret never has to
-be stored on the site at all.
+Etsy wants `keystring:shared_secret` in the `x-api-key` header on API calls, so
+both values are needed. The OAuth handshake itself uses PKCE and does not need
+the secret — the two are separate credentials.
 
 Tokens are stored in a non-autoloaded option. Access tokens last an hour and
 refresh automatically; the refresh token lasts ninety days. If nothing syncs for

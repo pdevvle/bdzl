@@ -343,6 +343,24 @@ class BDZ_Etsy_Admin {
 						(int) floor( $refresh / DAY_IN_SECONDS )
 					),
 				);
+
+				// A token minted before the scope widened keeps the old, too
+				// narrow grant. Etsy only says so at the point of use, so say
+				// it here instead.
+				$granted = isset( $tokens['scope'] ) ? (string) $tokens['scope'] : '';
+				$missing = array_diff(
+					explode( ' ', BDZ_Etsy_OAuth::SCOPE ),
+					explode( ' ', $granted )
+				);
+				if ( $missing ) {
+					$rows[] = array(
+						'fail',
+						sprintf(
+							'This connection is missing the %s scope — disconnect and reconnect to grant it',
+							implode( ', ', $missing )
+						),
+					);
+				}
 			} else {
 				$rows[] = array( 'fail', 'The Etsy refresh token has expired — reconnect' );
 			}
