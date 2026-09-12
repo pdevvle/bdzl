@@ -45,15 +45,25 @@ class BDZ_Etsy_Settings {
 	/**
 	 * The value Etsy wants in the x-api-key header.
 	 *
-	 * This is NOT the same as the OAuth client_id. The client_id is the
-	 * keystring and PKCE needs no secret, which is why connecting can succeed
-	 * while every API call still 403s with "Shared secret is required in
-	 * x-api-key header". When a shared secret is configured it is used here;
-	 * otherwise the keystring is, which is what the Etsy docs describe.
+	 * This is NOT the OAuth client_id. The client_id is the keystring and PKCE
+	 * needs no secret, which is why connecting can succeed while every API call
+	 * still 403s.
+	 *
+	 * Etsy rejects the keystring alone with "Shared secret is required in
+	 * x-api-key header", and the secret alone with "API key not found or not
+	 * active, or incorrect shared secret for API key" — the second wording says
+	 * it is looking for a key and a secret and matching them against each
+	 * other. So when both are configured they are sent colon-joined. Test
+	 * connection tries the alternatives and reports which Etsy accepts.
 	 */
 	public static function api_key() {
-		$secret = self::get( 'shared_secret' );
-		return $secret ? $secret : self::get( 'keystring' );
+		$keystring = self::get( 'keystring' );
+		$secret    = self::get( 'shared_secret' );
+
+		if ( $keystring && $secret ) {
+			return $keystring . ':' . $secret;
+		}
+		return $secret ? $secret : $keystring;
 	}
 
 	public static function all() {
