@@ -20,14 +20,16 @@ class BDZ_Etsy_Settings {
 
 	/** Settings that may be overridden by a wp-config.php constant. */
 	const CONSTANTS = array(
-		'keystring' => 'BDZ_ETSY_KEYSTRING',
-		'shop_name' => 'BDZ_ETSY_SHOP_NAME',
-		'shop_id'   => 'BDZ_ETSY_SHOP_ID',
+		'keystring'     => 'BDZ_ETSY_KEYSTRING',
+		'shared_secret' => 'BDZ_ETSY_SHARED_SECRET',
+		'shop_name'     => 'BDZ_ETSY_SHOP_NAME',
+		'shop_id'       => 'BDZ_ETSY_SHOP_ID',
 	);
 
 	public static function defaults() {
 		return array(
 			'keystring'      => '',
+			'shared_secret'  => '',
 			'shop_name'      => '',
 			'shop_id'        => '',
 			'redirect_uri'   => '',
@@ -38,6 +40,20 @@ class BDZ_Etsy_Settings {
 			'skip_review'    => 0,
 			'draft_missing'  => 1,
 		);
+	}
+
+	/**
+	 * The value Etsy wants in the x-api-key header.
+	 *
+	 * This is NOT the same as the OAuth client_id. The client_id is the
+	 * keystring and PKCE needs no secret, which is why connecting can succeed
+	 * while every API call still 403s with "Shared secret is required in
+	 * x-api-key header". When a shared secret is configured it is used here;
+	 * otherwise the keystring is, which is what the Etsy docs describe.
+	 */
+	public static function api_key() {
+		$secret = self::get( 'shared_secret' );
+		return $secret ? $secret : self::get( 'keystring' );
 	}
 
 	public static function all() {
