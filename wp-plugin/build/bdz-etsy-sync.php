@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Etsy Sync for WooCommerce
  * Description: Imports and keeps in sync the Etsy catalogue as WooCommerce products. Etsy stays the source of truth; nothing here ever deletes a product.
- * Version:     1.0.0
+ * Version:     1.0.1
  * Requires PHP: 7.4
  * Author:      HarleysBooks
  * License:     GPL-2.0-or-later
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'BDZ_ETSY_VERSION', '1.0.0' );
+define( 'BDZ_ETSY_VERSION', '1.0.1' );
 define( 'BDZ_ETSY_FILE', __FILE__ );
 define( 'BDZ_ETSY_DIR', plugin_dir_path( __FILE__ ) );
 define( 'BDZ_ETSY_URL', plugin_dir_url( __FILE__ ) );
@@ -802,7 +802,14 @@ class BDZ_Etsy_Client {
 		}
 
 		if ( 403 === $code ) {
-			return new WP_Error( 'bdz_etsy_403', 'Etsy returned 403. The app may not be approved for the Open API v3, or the token does not own this shop.' );
+			return new WP_Error(
+				'bdz_etsy_403',
+				sprintf(
+					'Etsy returned 403 for %s. Usually the app is not yet approved for the Open API v3, or the token does not own this shop. Etsy said: %s',
+					$path,
+					$this->body_excerpt( $response )
+				)
+			);
 		}
 
 		if ( 404 === $code ) {
@@ -812,7 +819,7 @@ class BDZ_Etsy_Client {
 		if ( $code >= 400 ) {
 			return new WP_Error(
 				'bdz_etsy_http',
-				sprintf( 'Etsy GET %s failed: HTTP %d %s', $path, $code, substr( wp_remote_retrieve_body( $response ), 0, 300 ) )
+				sprintf( 'Etsy GET %s failed: HTTP %d %s', $path, $code, $this->body_excerpt( $response ) )
 			);
 		}
 
@@ -822,6 +829,27 @@ class BDZ_Etsy_Client {
 		}
 
 		return $decoded;
+	}
+
+	/**
+	 * Etsy explains itself in the response body — "app not approved", a bad
+	 * shop id, a missing scope. Discarding it turns a specific failure into a
+	 * guess, so surface it.
+	 */
+	private function body_excerpt( $response ) {
+		$body = trim( (string) wp_remote_retrieve_body( $response ) );
+		if ( '' === $body ) {
+			return '(empty response body)';
+		}
+		$decoded = json_decode( $body, true );
+		if ( is_array( $decoded ) ) {
+			foreach ( array( 'error_description', 'error', 'message' ) as $key ) {
+				if ( ! empty( $decoded[ $key ] ) && is_string( $decoded[ $key ] ) ) {
+					return $decoded[ $key ];
+				}
+			}
+		}
+		return substr( $body, 0, 300 );
 	}
 
 	/**
@@ -1614,8 +1642,10 @@ class BDZ_Etsy_Job {
 		$this->state['message'] = 'Starting…';
 		$this->save();
 
-		BDZ_Etsy_Logger::clear();
-		BDZ_Etsy_Logger::add( $dry_run ? 'Starting a DRY RUN — nothing will be written to the store.' : 'Starting sync.' );
+		// Deliberately not cleared: clearing destroyed the record of which Etsy
+		// account connected, which is the first thing you want when a run
+		// fails. The ring buffer caps growth on its own.
+		BDZ_Etsy_Logger::add( '--- ' . ( $dry_run ? 'DRY RUN — nothing will be written to the store' : 'Sync run' ) . ' ---' );
 
 		return true;
 	}
@@ -2080,6 +2110,38 @@ class BDZ_Etsy_Admin {
 				$notice = 'Disconnected from Etsy.';
 				break;
 
+			case 'test':
+				// Isolates the two failure modes that both surface as 403:
+				// openapi-ping needs only the keystring, so if it passes and
+				// the shop lookup still fails, the app is fine and the
+				// connected account is the problem.
+				$client = new BDZ_Etsy_Client();
+				BDZ_Etsy_Logger::add( '--- Connection test ---' );
+
+				$tokens = BDZ_Etsy_OAuth::tokens();
+				BDZ_Etsy_Logger::add(
+					'Connected Etsy user id: ' . ( ! empty( $tokens['etsy_user_id'] ) ? $tokens['etsy_user_id'] : 'unknown' )
+				);
+
+				$ping = $client->ping();
+				if ( is_wp_error( $ping ) ) {
+					BDZ_Etsy_Logger::error( 'Ping failed — ' . $ping->get_error_message() );
+					BDZ_Etsy_Logger::add( 'openapi-ping needs only the keystring, so a failure here points at the app itself: not yet approved for the Open API v3, or a wrong keystring.' );
+				} else {
+					BDZ_Etsy_Logger::ok( 'Ping OK — the app is approved and the keystring works.' );
+
+					$shop = $client->resolve_shop();
+					if ( is_wp_error( $shop ) ) {
+						BDZ_Etsy_Logger::error( 'Shop lookup failed — ' . $shop->get_error_message() );
+						BDZ_Etsy_Logger::add( 'The app is fine, so this is about the connected account or the configured shop name/id.' );
+					} else {
+						BDZ_Etsy_Logger::ok( sprintf( 'Shop resolved: %s (%d).', $shop['shop_name'], $shop['shop_id'] ) );
+					}
+				}
+
+				$notice = 'Connection test finished — see Activity below.';
+				break;
+
 			case 'run':
 			case 'dry_run':
 				$job    = new BDZ_Etsy_Job();
@@ -2314,6 +2376,7 @@ class BDZ_Etsy_Admin {
 					<h2>Run</h2>
 					<form method="post" class="bdz-run">
 						<?php wp_nonce_field( self::NONCE ); ?>
+						<button class="button" name="bdz_etsy_action" value="test" <?php disabled( ! $connected ); ?>>Test connection</button>
 						<button class="button" name="bdz_etsy_action" value="dry_run" <?php disabled( ! $connected ); ?>>Dry run</button>
 						<button class="button button-primary" name="bdz_etsy_action" value="run" <?php disabled( ! $connected ); ?>>Sync now</button>
 						<?php if ( 'running' === $state['status'] ) : ?>

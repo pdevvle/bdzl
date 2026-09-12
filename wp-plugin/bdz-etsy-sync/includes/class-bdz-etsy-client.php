@@ -73,7 +73,14 @@ class BDZ_Etsy_Client {
 		}
 
 		if ( 403 === $code ) {
-			return new WP_Error( 'bdz_etsy_403', 'Etsy returned 403. The app may not be approved for the Open API v3, or the token does not own this shop.' );
+			return new WP_Error(
+				'bdz_etsy_403',
+				sprintf(
+					'Etsy returned 403 for %s. Usually the app is not yet approved for the Open API v3, or the token does not own this shop. Etsy said: %s',
+					$path,
+					$this->body_excerpt( $response )
+				)
+			);
 		}
 
 		if ( 404 === $code ) {
@@ -83,7 +90,7 @@ class BDZ_Etsy_Client {
 		if ( $code >= 400 ) {
 			return new WP_Error(
 				'bdz_etsy_http',
-				sprintf( 'Etsy GET %s failed: HTTP %d %s', $path, $code, substr( wp_remote_retrieve_body( $response ), 0, 300 ) )
+				sprintf( 'Etsy GET %s failed: HTTP %d %s', $path, $code, $this->body_excerpt( $response ) )
 			);
 		}
 
@@ -93,6 +100,27 @@ class BDZ_Etsy_Client {
 		}
 
 		return $decoded;
+	}
+
+	/**
+	 * Etsy explains itself in the response body — "app not approved", a bad
+	 * shop id, a missing scope. Discarding it turns a specific failure into a
+	 * guess, so surface it.
+	 */
+	private function body_excerpt( $response ) {
+		$body = trim( (string) wp_remote_retrieve_body( $response ) );
+		if ( '' === $body ) {
+			return '(empty response body)';
+		}
+		$decoded = json_decode( $body, true );
+		if ( is_array( $decoded ) ) {
+			foreach ( array( 'error_description', 'error', 'message' ) as $key ) {
+				if ( ! empty( $decoded[ $key ] ) && is_string( $decoded[ $key ] ) ) {
+					return $decoded[ $key ];
+				}
+			}
+		}
+		return substr( $body, 0, 300 );
 	}
 
 	/**
