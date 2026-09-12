@@ -27,9 +27,10 @@ Flow, in the order it happens
 4. POST the code plus the original verifier to the token endpoint.
 5. Store access + refresh tokens, 0600, next to the importer.
 
-The app's *shared secret* is not used anywhere in this flow. PKCE
-authenticates with the verifier instead, so the secret never needs to
-leave wherever you keep it.
+The app's *shared secret* is not used by this OAuth flow — PKCE authenticates
+with the verifier instead. It IS required elsewhere, though: Etsy wants
+``keystring:shared_secret`` in the ``x-api-key`` header on API calls, so the
+importer needs ETSY_SHARED_SECRET even though this handshake does not.
 
 Environment
 -----------
@@ -65,7 +66,7 @@ except ImportError:  # pragma: no cover
 CONNECT_URL = "https://www.etsy.com/oauth/connect"
 TOKEN_URL = "https://api.etsy.com/v3/public/oauth/token"
 
-DEFAULT_SCOPE = "listings_r"
+DEFAULT_SCOPE = "listings_r shops_r"
 DEFAULT_PORT = 3003
 DEFAULT_REDIRECT_PATH = "/oauth/redirect"
 DEFAULT_TOKEN_FILE = ".etsy_tokens.json"

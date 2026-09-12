@@ -419,6 +419,14 @@ def _check_etsy(report, args):
         return
     report.add("ok", "ETSY_KEYSTRING is set")
 
+    if os.environ.get("ETSY_SHARED_SECRET"):
+        report.add("ok", "ETSY_SHARED_SECRET is set")
+    else:
+        report.add("fail", "ETSY_SHARED_SECRET is not set",
+                   ["Etsy wants keystring:shared_secret in the x-api-key header.",
+                    "The keystring alone is refused on every API call."])
+        return
+
     try:
         import etsy_auth
     except ImportError:
@@ -462,7 +470,8 @@ def _check_etsy(report, args):
             report.add("fail", "could not obtain a live access token: %s" % exc)
             return
 
-    client = imp.EtsyClient(keystring, token)
+    client = imp.EtsyClient(keystring, token,
+                            shared_secret=os.environ.get("ETSY_SHARED_SECRET"))
     try:
         client.get("/openapi-ping")
         report.add("ok", "Etsy API reachable")

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Etsy Sync for WooCommerce
  * Description: Imports and keeps in sync the Etsy catalogue as WooCommerce products. Etsy stays the source of truth; nothing here ever deletes a product.
- * Version:     1.0.3
+ * Version:     1.0.4
  * Requires PHP: 7.4
  * Author:      HarleysBooks
  * License:     GPL-2.0-or-later
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'BDZ_ETSY_VERSION', '1.0.3' );
+define( 'BDZ_ETSY_VERSION', '1.0.4' );
 define( 'BDZ_ETSY_FILE', __FILE__ );
 define( 'BDZ_ETSY_DIR', plugin_dir_path( __FILE__ ) );
 define( 'BDZ_ETSY_URL', plugin_dir_url( __FILE__ ) );
@@ -540,7 +540,13 @@ class BDZ_Etsy_OAuth {
 	const TOKEN_OPTION   = 'bdz_etsy_tokens';
 	const PENDING_OPTION = 'bdz_etsy_oauth_pending';
 
-	const SCOPE = 'listings_r';
+	/**
+	 * listings_r reads the listings and their inventory; shops_r is needed to
+	 * resolve which shop the connected account owns (/users/me and the shop
+	 * endpoints). Requesting only listings_r gets as far as a working API key
+	 * and then fails with "Access token lacks scope for this request".
+	 */
+	const SCOPE = 'listings_r shops_r';
 
 	/** Etsy does not report refresh expiry. Documented lifetime is 90 days. */
 	const REFRESH_LIFETIME = 7776000;
@@ -2348,6 +2354,24 @@ class BDZ_Etsy_Admin {
 						(int) floor( $refresh / DAY_IN_SECONDS )
 					),
 				);
+
+				// A token minted before the scope widened keeps the old, too
+				// narrow grant. Etsy only says so at the point of use, so say
+				// it here instead.
+				$granted = isset( $tokens['scope'] ) ? (string) $tokens['scope'] : '';
+				$missing = array_diff(
+					explode( ' ', BDZ_Etsy_OAuth::SCOPE ),
+					explode( ' ', $granted )
+				);
+				if ( $missing ) {
+					$rows[] = array(
+						'fail',
+						sprintf(
+							'This connection is missing the %s scope — disconnect and reconnect to grant it',
+							implode( ', ', $missing )
+						),
+					);
+				}
 			} else {
 				$rows[] = array( 'fail', 'The Etsy refresh token has expired — reconnect' );
 			}

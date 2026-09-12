@@ -22,7 +22,13 @@ class BDZ_Etsy_OAuth {
 	const TOKEN_OPTION   = 'bdz_etsy_tokens';
 	const PENDING_OPTION = 'bdz_etsy_oauth_pending';
 
-	const SCOPE = 'listings_r';
+	/**
+	 * listings_r reads the listings and their inventory; shops_r is needed to
+	 * resolve which shop the connected account owns (/users/me and the shop
+	 * endpoints). Requesting only listings_r gets as far as a working API key
+	 * and then fails with "Access token lacks scope for this request".
+	 */
+	const SCOPE = 'listings_r shops_r';
 
 	/** Etsy does not report refresh expiry. Documented lifetime is 90 days. */
 	const REFRESH_LIFETIME = 7776000;
