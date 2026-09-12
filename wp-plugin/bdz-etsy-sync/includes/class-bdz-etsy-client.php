@@ -18,8 +18,14 @@ class BDZ_Etsy_Client {
 	private $keystring;
 	private $token;
 
-	public function __construct() {
-		$this->keystring = BDZ_Etsy_Settings::get( 'keystring' );
+	/**
+	 * @param string|null $api_key_override Value to send as x-api-key instead
+	 *                                      of the configured one. Used by the
+	 *                                      connection test to determine which
+	 *                                      credential Etsy actually accepts.
+	 */
+	public function __construct( $api_key_override = null ) {
+		$this->keystring = $api_key_override ? $api_key_override : BDZ_Etsy_Settings::api_key();
 	}
 
 	private function token( $force_refresh = false ) {

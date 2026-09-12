@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Etsy Sync for WooCommerce
  * Description: Imports and keeps in sync the Etsy catalogue as WooCommerce products. Etsy stays the source of truth; nothing here ever deletes a product.
- * Version:     1.0.1
+ * Version:     1.0.2
  * Requires PHP: 7.4
  * Author:      HarleysBooks
  * License:     GPL-2.0-or-later
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'BDZ_ETSY_VERSION', '1.0.1' );
+define( 'BDZ_ETSY_VERSION', '1.0.2' );
 define( 'BDZ_ETSY_FILE', __FILE__ );
 define( 'BDZ_ETSY_DIR', plugin_dir_path( __FILE__ ) );
 define( 'BDZ_ETSY_URL', plugin_dir_url( __FILE__ ) );
@@ -387,14 +387,16 @@ class BDZ_Etsy_Settings {
 
 	/** Settings that may be overridden by a wp-config.php constant. */
 	const CONSTANTS = array(
-		'keystring' => 'BDZ_ETSY_KEYSTRING',
-		'shop_name' => 'BDZ_ETSY_SHOP_NAME',
-		'shop_id'   => 'BDZ_ETSY_SHOP_ID',
+		'keystring'     => 'BDZ_ETSY_KEYSTRING',
+		'shared_secret' => 'BDZ_ETSY_SHARED_SECRET',
+		'shop_name'     => 'BDZ_ETSY_SHOP_NAME',
+		'shop_id'       => 'BDZ_ETSY_SHOP_ID',
 	);
 
 	public static function defaults() {
 		return array(
 			'keystring'      => '',
+			'shared_secret'  => '',
 			'shop_name'      => '',
 			'shop_id'        => '',
 			'redirect_uri'   => '',
@@ -405,6 +407,20 @@ class BDZ_Etsy_Settings {
 			'skip_review'    => 0,
 			'draft_missing'  => 1,
 		);
+	}
+
+	/**
+	 * The value Etsy wants in the x-api-key header.
+	 *
+	 * This is NOT the same as the OAuth client_id. The client_id is the
+	 * keystring and PKCE needs no secret, which is why connecting can succeed
+	 * while every API call still 403s with "Shared secret is required in
+	 * x-api-key header". When a shared secret is configured it is used here;
+	 * otherwise the keystring is, which is what the Etsy docs describe.
+	 */
+	public static function api_key() {
+		$secret = self::get( 'shared_secret' );
+		return $secret ? $secret : self::get( 'keystring' );
 	}
 
 	public static function all() {
@@ -747,8 +763,14 @@ class BDZ_Etsy_Client {
 	private $keystring;
 	private $token;
 
-	public function __construct() {
-		$this->keystring = BDZ_Etsy_Settings::get( 'keystring' );
+	/**
+	 * @param string|null $api_key_override Value to send as x-api-key instead
+	 *                                      of the configured one. Used by the
+	 *                                      connection test to determine which
+	 *                                      credential Etsy actually accepts.
+	 */
+	public function __construct( $api_key_override = null ) {
+		$this->keystring = $api_key_override ? $api_key_override : BDZ_Etsy_Settings::api_key();
 	}
 
 	private function token( $force_refresh = false ) {
@@ -2082,13 +2104,13 @@ class BDZ_Etsy_Admin {
 					'draft_missing' => ! empty( $_POST['draft_missing'] ) ? 1 : 0,
 				);
 
-				// Only overwrite the keystring if something other than the mask
-				// was typed, so saving the form does not wipe it.
-				$submitted = isset( $_POST['keystring'] ) ? trim( wp_unslash( $_POST['keystring'] ) ) : '';
-				if ( '' !== $submitted && self::MASK !== $submitted ) {
-					$values['keystring'] = $submitted;
-				} else {
-					$values['keystring'] = BDZ_Etsy_Settings::all()['keystring'];
+				// Only overwrite a stored credential if something other than the
+				// mask was typed, so saving the form does not wipe it.
+				foreach ( array( 'keystring', 'shared_secret' ) as $secret_key ) {
+					$submitted = isset( $_POST[ $secret_key ] ) ? trim( wp_unslash( $_POST[ $secret_key ] ) ) : '';
+					$values[ $secret_key ] = ( '' !== $submitted && self::MASK !== $submitted )
+						? $submitted
+						: BDZ_Etsy_Settings::all()[ $secret_key ];
 				}
 
 				BDZ_Etsy_Settings::update( $values );
@@ -2111,11 +2133,6 @@ class BDZ_Etsy_Admin {
 				break;
 
 			case 'test':
-				// Isolates the two failure modes that both surface as 403:
-				// openapi-ping needs only the keystring, so if it passes and
-				// the shop lookup still fails, the app is fine and the
-				// connected account is the problem.
-				$client = new BDZ_Etsy_Client();
 				BDZ_Etsy_Logger::add( '--- Connection test ---' );
 
 				$tokens = BDZ_Etsy_OAuth::tokens();
@@ -2123,20 +2140,50 @@ class BDZ_Etsy_Admin {
 					'Connected Etsy user id: ' . ( ! empty( $tokens['etsy_user_id'] ) ? $tokens['etsy_user_id'] : 'unknown' )
 				);
 
-				$ping = $client->ping();
-				if ( is_wp_error( $ping ) ) {
-					BDZ_Etsy_Logger::error( 'Ping failed — ' . $ping->get_error_message() );
-					BDZ_Etsy_Logger::add( 'openapi-ping needs only the keystring, so a failure here points at the app itself: not yet approved for the Open API v3, or a wrong keystring.' );
-				} else {
-					BDZ_Etsy_Logger::ok( 'Ping OK — the app is approved and the keystring works.' );
+				// Etsy's x-api-key is not the OAuth client_id, and which value
+				// it wants is not reliably documented — a wrong one 403s with
+				// "Shared secret is required in x-api-key header". Try each
+				// configured credential and report which one Etsy accepts,
+				// rather than guessing.
+				$candidates = array();
+				if ( BDZ_Etsy_Settings::get( 'keystring' ) ) {
+					$candidates['keystring'] = BDZ_Etsy_Settings::get( 'keystring' );
+				}
+				if ( BDZ_Etsy_Settings::get( 'shared_secret' ) ) {
+					$candidates['shared secret'] = BDZ_Etsy_Settings::get( 'shared_secret' );
+				}
 
-					$shop = $client->resolve_shop();
-					if ( is_wp_error( $shop ) ) {
-						BDZ_Etsy_Logger::error( 'Shop lookup failed — ' . $shop->get_error_message() );
-						BDZ_Etsy_Logger::add( 'The app is fine, so this is about the connected account or the configured shop name/id.' );
-					} else {
-						BDZ_Etsy_Logger::ok( sprintf( 'Shop resolved: %s (%d).', $shop['shop_name'], $shop['shop_id'] ) );
+				if ( ! $candidates ) {
+					BDZ_Etsy_Logger::error( 'No keystring or shared secret is configured.' );
+					$notice = 'Nothing to test — set the credentials first.';
+					break;
+				}
+
+				$working = null;
+				foreach ( $candidates as $label => $value ) {
+					$probe = new BDZ_Etsy_Client( $value );
+					$ping  = $probe->ping();
+					if ( is_wp_error( $ping ) ) {
+						BDZ_Etsy_Logger::warn( sprintf( 'x-api-key = %s: %s', $label, $ping->get_error_message() ) );
+						continue;
 					}
+					BDZ_Etsy_Logger::ok( sprintf( 'x-api-key = %s: ping OK — Etsy accepts this one.', $label ) );
+					$working = $value;
+					break;
+				}
+
+				if ( null === $working ) {
+					BDZ_Etsy_Logger::error( 'Neither credential was accepted in x-api-key. If only one is configured, add the other in Settings and test again.' );
+					$notice = 'Connection test finished — see Activity below.';
+					break;
+				}
+
+				$shop = ( new BDZ_Etsy_Client( $working ) )->resolve_shop();
+				if ( is_wp_error( $shop ) ) {
+					BDZ_Etsy_Logger::error( 'Shop lookup failed — ' . $shop->get_error_message() );
+					BDZ_Etsy_Logger::add( 'The app credential works, so this is about the connected account or the configured shop name/id.' );
+				} else {
+					BDZ_Etsy_Logger::ok( sprintf( 'Shop resolved: %s (%d).', $shop['shop_name'], $shop['shop_id'] ) );
 				}
 
 				$notice = 'Connection test finished — see Activity below.';
@@ -2452,6 +2499,24 @@ class BDZ_Etsy_Admin {
 									<p class="description">
 										The app keystring. The shared secret is <strong>not</strong> needed — this uses PKCE.
 										For a stronger posture, define <code>BDZ_ETSY_KEYSTRING</code> in wp-config.php instead.
+									</p>
+								<?php endif; ?>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="shared_secret">Etsy shared secret</label></th>
+							<td>
+								<?php if ( BDZ_Etsy_Settings::is_locked( 'shared_secret' ) ) : ?>
+									<input type="text" class="regular-text" value="set in wp-config.php" disabled>
+									<p class="description">Defined as <code>BDZ_ETSY_SHARED_SECRET</code>.</p>
+								<?php else : ?>
+									<input type="text" id="shared_secret" name="shared_secret" class="regular-text" autocomplete="off"
+										value="<?php echo esc_attr( $settings['shared_secret'] ? self::MASK : '' ); ?>">
+									<p class="description">
+										Not used by the OAuth handshake — that uses PKCE. But Etsy rejects API
+										calls with <em>"Shared secret is required in x-api-key header"</em> unless
+										this is set. When present it is sent as <code>x-api-key</code>; use
+										<strong>Test connection</strong> to confirm which credential Etsy accepts.
 									</p>
 								<?php endif; ?>
 							</td>
