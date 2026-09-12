@@ -145,17 +145,24 @@ class BDZ_Etsy_Admin {
 					'Connected Etsy user id: ' . ( ! empty( $tokens['etsy_user_id'] ) ? $tokens['etsy_user_id'] : 'unknown' )
 				);
 
-				// Etsy's x-api-key is not the OAuth client_id, and which value
-				// it wants is not reliably documented — a wrong one 403s with
-				// "Shared secret is required in x-api-key header". Try each
-				// configured credential and report which one Etsy accepts,
-				// rather than guessing.
+				// Which credential Etsy wants in x-api-key is not something to
+				// guess at: the keystring alone is refused for missing the
+				// secret, and the secret alone is refused for not matching a
+				// key. Try every plausible arrangement and report which one
+				// Etsy accepts.
+				$keystring = BDZ_Etsy_Settings::get( 'keystring' );
+				$secret    = BDZ_Etsy_Settings::get( 'shared_secret' );
+
 				$candidates = array();
-				if ( BDZ_Etsy_Settings::get( 'keystring' ) ) {
-					$candidates['keystring'] = BDZ_Etsy_Settings::get( 'keystring' );
+				if ( $keystring && $secret ) {
+					$candidates['keystring:secret'] = $keystring . ':' . $secret;
+					$candidates['secret:keystring'] = $secret . ':' . $keystring;
 				}
-				if ( BDZ_Etsy_Settings::get( 'shared_secret' ) ) {
-					$candidates['shared secret'] = BDZ_Etsy_Settings::get( 'shared_secret' );
+				if ( $keystring ) {
+					$candidates['keystring alone'] = $keystring;
+				}
+				if ( $secret ) {
+					$candidates['secret alone'] = $secret;
 				}
 
 				if ( ! $candidates ) {
@@ -178,7 +185,7 @@ class BDZ_Etsy_Admin {
 				}
 
 				if ( null === $working ) {
-					BDZ_Etsy_Logger::error( 'Neither credential was accepted in x-api-key. If only one is configured, add the other in Settings and test again.' );
+					BDZ_Etsy_Logger::error( 'Etsy accepted none of the credential arrangements. If both values are set and correct, the app itself is most likely still awaiting approval for the Open API v3.' );
 					$notice = 'Connection test finished — see Activity below.';
 					break;
 				}

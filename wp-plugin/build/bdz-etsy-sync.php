@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Etsy Sync for WooCommerce
  * Description: Imports and keeps in sync the Etsy catalogue as WooCommerce products. Etsy stays the source of truth; nothing here ever deletes a product.
- * Version:     1.0.2
+ * Version:     1.0.3
  * Requires PHP: 7.4
  * Author:      HarleysBooks
  * License:     GPL-2.0-or-later
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'BDZ_ETSY_VERSION', '1.0.2' );
+define( 'BDZ_ETSY_VERSION', '1.0.3' );
 define( 'BDZ_ETSY_FILE', __FILE__ );
 define( 'BDZ_ETSY_DIR', plugin_dir_path( __FILE__ ) );
 define( 'BDZ_ETSY_URL', plugin_dir_url( __FILE__ ) );
@@ -412,15 +412,25 @@ class BDZ_Etsy_Settings {
 	/**
 	 * The value Etsy wants in the x-api-key header.
 	 *
-	 * This is NOT the same as the OAuth client_id. The client_id is the
-	 * keystring and PKCE needs no secret, which is why connecting can succeed
-	 * while every API call still 403s with "Shared secret is required in
-	 * x-api-key header". When a shared secret is configured it is used here;
-	 * otherwise the keystring is, which is what the Etsy docs describe.
+	 * This is NOT the OAuth client_id. The client_id is the keystring and PKCE
+	 * needs no secret, which is why connecting can succeed while every API call
+	 * still 403s.
+	 *
+	 * Etsy rejects the keystring alone with "Shared secret is required in
+	 * x-api-key header", and the secret alone with "API key not found or not
+	 * active, or incorrect shared secret for API key" — the second wording says
+	 * it is looking for a key and a secret and matching them against each
+	 * other. So when both are configured they are sent colon-joined. Test
+	 * connection tries the alternatives and reports which Etsy accepts.
 	 */
 	public static function api_key() {
-		$secret = self::get( 'shared_secret' );
-		return $secret ? $secret : self::get( 'keystring' );
+		$keystring = self::get( 'keystring' );
+		$secret    = self::get( 'shared_secret' );
+
+		if ( $keystring && $secret ) {
+			return $keystring . ':' . $secret;
+		}
+		return $secret ? $secret : $keystring;
 	}
 
 	public static function all() {
@@ -2140,17 +2150,24 @@ class BDZ_Etsy_Admin {
 					'Connected Etsy user id: ' . ( ! empty( $tokens['etsy_user_id'] ) ? $tokens['etsy_user_id'] : 'unknown' )
 				);
 
-				// Etsy's x-api-key is not the OAuth client_id, and which value
-				// it wants is not reliably documented — a wrong one 403s with
-				// "Shared secret is required in x-api-key header". Try each
-				// configured credential and report which one Etsy accepts,
-				// rather than guessing.
+				// Which credential Etsy wants in x-api-key is not something to
+				// guess at: the keystring alone is refused for missing the
+				// secret, and the secret alone is refused for not matching a
+				// key. Try every plausible arrangement and report which one
+				// Etsy accepts.
+				$keystring = BDZ_Etsy_Settings::get( 'keystring' );
+				$secret    = BDZ_Etsy_Settings::get( 'shared_secret' );
+
 				$candidates = array();
-				if ( BDZ_Etsy_Settings::get( 'keystring' ) ) {
-					$candidates['keystring'] = BDZ_Etsy_Settings::get( 'keystring' );
+				if ( $keystring && $secret ) {
+					$candidates['keystring:secret'] = $keystring . ':' . $secret;
+					$candidates['secret:keystring'] = $secret . ':' . $keystring;
 				}
-				if ( BDZ_Etsy_Settings::get( 'shared_secret' ) ) {
-					$candidates['shared secret'] = BDZ_Etsy_Settings::get( 'shared_secret' );
+				if ( $keystring ) {
+					$candidates['keystring alone'] = $keystring;
+				}
+				if ( $secret ) {
+					$candidates['secret alone'] = $secret;
 				}
 
 				if ( ! $candidates ) {
@@ -2173,7 +2190,7 @@ class BDZ_Etsy_Admin {
 				}
 
 				if ( null === $working ) {
-					BDZ_Etsy_Logger::error( 'Neither credential was accepted in x-api-key. If only one is configured, add the other in Settings and test again.' );
+					BDZ_Etsy_Logger::error( 'Etsy accepted none of the credential arrangements. If both values are set and correct, the app itself is most likely still awaiting approval for the Open API v3.' );
 					$notice = 'Connection test finished — see Activity below.';
 					break;
 				}
