@@ -88,8 +88,10 @@ class BDZ_Etsy_Job {
 		$this->state['message'] = 'Starting…';
 		$this->save();
 
-		BDZ_Etsy_Logger::clear();
-		BDZ_Etsy_Logger::add( $dry_run ? 'Starting a DRY RUN — nothing will be written to the store.' : 'Starting sync.' );
+		// Deliberately not cleared: clearing destroyed the record of which Etsy
+		// account connected, which is the first thing you want when a run
+		// fails. The ring buffer caps growth on its own.
+		BDZ_Etsy_Logger::add( '--- ' . ( $dry_run ? 'DRY RUN — nothing will be written to the store' : 'Sync run' ) . ' ---' );
 
 		return true;
 	}
