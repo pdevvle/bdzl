@@ -2,17 +2,21 @@
 /**
  * Neutral catalogue item -> WooCommerce product.
  *
- * The safety rules here are the same ones the command-line importer follows,
- * and they exist because this runs unattended:
+ * The safety rules here exist because this runs unattended:
  *
  *   - Products are matched by SKU (etsy-<listing_id>), so a re-run updates in
  *     place instead of creating a second copy.
- *   - A store product that is not simple is SKIPPED, never flattened. Pushing
- *     a simple product at a variable one orphans its variations.
  *   - Status is set on create only, so a product the owner unpublished stays
  *     unpublished.
  *   - Images are only re-imported when the Etsy image set actually changed.
- *   - Nothing is ever deleted.
+ *   - A product this plugin did not create is never converted between simple
+ *     and variable; it is skipped.
+ *   - No product is ever deleted.
+ *
+ * Variations are the one thing that does get deleted, and only ever the
+ * plugin's own: a variation whose Etsy offering has gone would otherwise sit in
+ * the storefront as a buyable combination that no longer exists. Deletion is
+ * scoped to children whose SKU carries this listing's own prefix.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -45,37 +49,67 @@ class BDZ_Etsy_Importer {
 	 * @return array { action: created|updated|skipped|failed, message: string }
 	 */
 	public function import_item( array $item ) {
-		$sku   = $item['sku'];
-		$title = $item['title'];
+		$sku         = $item['sku'];
+		$title       = $item['title'];
+		$is_variable = ! empty( $item['is_variable'] );
+		$target_type = $is_variable ? 'variable' : 'simple';
 
-		if ( '' === $item['price'] ) {
+		if ( ! $is_variable && '' === $item['price'] ) {
 			return $this->outcome( 'failed', sprintf( '%s has no price — skipped. %s', $sku, $title ) );
+		}
+		if ( $is_variable && empty( $item['variants'] ) ) {
+			return $this->outcome( 'failed', sprintf( '%s is variable but has no buyable variations — skipped. %s', $sku, $title ) );
 		}
 
 		$product_id = wc_get_product_id_by_sku( $sku );
 		$existing   = $product_id ? wc_get_product( $product_id ) : null;
 
-		if ( $existing && 'simple' !== $existing->get_type() ) {
+		if ( $existing && $existing->get_type() !== $target_type ) {
+			// Converting a product this plugin created is legitimate — Etsy is
+			// the source of truth and a listing can gain or lose its options.
+			// Converting someone else's product is not.
+			$is_ours = '' !== (string) get_post_meta( $product_id, self::META_LISTING_ID, true );
+			if ( ! $is_ours ) {
+				return $this->outcome(
+					'skipped',
+					sprintf(
+						'%s is a "%s" product in the store (#%d) and this plugin did not create it — importing would convert it to %s and orphan its variations. Skipped.',
+						$sku,
+						$existing->get_type(),
+						$product_id,
+						$target_type
+					)
+				);
+			}
+		}
+
+		if ( $this->dry_run ) {
+			$shape = $is_variable
+				? sprintf( 'variable, %d variation(s)', count( $item['variants'] ) )
+				: 'simple';
 			return $this->outcome(
-				'skipped',
+				$existing ? 'updated' : 'created',
 				sprintf(
-					'%s is a "%s" product in the store (#%d) — importing would convert it to simple and orphan its variations. Skipped.',
+					'%s would %s — %s [%s]',
 					$sku,
-					$existing->get_type(),
-					$product_id
+					$existing ? 'update #' . $product_id : 'be created',
+					$title,
+					$shape
 				)
 			);
 		}
 
-		if ( $this->dry_run ) {
-			return $this->outcome(
-				$existing ? 'updated' : 'created',
-				sprintf( '%s would %s — %s', $sku, $existing ? 'update #' . $product_id : 'be created', $title )
-			);
-		}
+		$is_new = ! $existing;
 
-		$product = $existing ? $existing : new WC_Product_Simple();
-		$is_new  = ! $existing;
+		// A type change has to go through a fresh object: WooCommerce decides
+		// behaviour from the class, not from a settable field.
+		if ( $existing && $existing->get_type() !== $target_type ) {
+			$product = $is_variable ? new WC_Product_Variable( $product_id ) : new WC_Product_Simple( $product_id );
+		} elseif ( $existing ) {
+			$product = $existing;
+		} else {
+			$product = $is_variable ? new WC_Product_Variable() : new WC_Product_Simple();
+		}
 
 		$product->set_name( $title );
 		$product->set_sku( $sku );
@@ -83,13 +117,22 @@ class BDZ_Etsy_Importer {
 		$product->set_short_description(
 			BDZ_Etsy_Normalize::text_to_html( BDZ_Etsy_Normalize::first_paragraph( $item['description'] ) )
 		);
-		$product->set_regular_price( $item['price'] );
-		$product->set_manage_stock( true );
-		$product->set_stock_quantity( max( 0, (int) $item['quantity'] - $this->stock_buffer ) );
-		$product->set_backorders( 'no' );
 		$product->set_catalog_visibility( 'visible' );
 
-		// Only on create — an owner unpublishing something must stick.
+		if ( $is_variable ) {
+			// Price and stock live on the variations; the parent must not carry
+			// its own or WooCommerce shows a price that belongs to nothing.
+			$product->set_regular_price( '' );
+			$product->set_manage_stock( false );
+			$product->set_attributes( $this->build_attributes( $item['attributes'] ) );
+		} else {
+			$product->set_regular_price( $item['price'] );
+			$product->set_manage_stock( true );
+			$product->set_stock_quantity( max( 0, (int) $item['quantity'] - $this->stock_buffer ) );
+			$product->set_backorders( 'no' );
+			$product->set_attributes( array() );
+		}
+
 		if ( $is_new ) {
 			$product->set_status( $this->new_status );
 		}
@@ -97,6 +140,21 @@ class BDZ_Etsy_Importer {
 		$product_id = $product->save();
 		if ( ! $product_id ) {
 			return $this->outcome( 'failed', sprintf( '%s could not be saved.', $sku ) );
+		}
+
+		$variation_note = '';
+		if ( $is_variable ) {
+			$counts         = $this->sync_variations( $product_id, $item );
+			$variation_note = sprintf(
+				' [%d variation(s): +%d ~%d -%d]',
+				count( $item['variants'] ),
+				$counts['created'],
+				$counts['updated'],
+				$counts['removed']
+			);
+		} else {
+			// Dropping back to simple: clear out any variations left behind.
+			$this->remove_all_variations( $product_id, $item['sku'] );
 		}
 
 		$this->apply_terms( $product_id, $item );
@@ -120,14 +178,127 @@ class BDZ_Etsy_Importer {
 			delete_post_meta( $product_id, self::META_REVIEW );
 		}
 
+		if ( $is_variable ) {
+			// Recalculates the parent's displayed price range from the
+			// variations that now exist.
+			WC_Product_Variable::sync( $product_id );
+		}
+		wc_delete_product_transients( $product_id );
+
 		return $this->outcome(
 			$is_new ? 'created' : 'updated',
-			sprintf( '%s %s #%d — %s', $sku, $is_new ? 'created' : 'updated', $product_id, $title )
+			sprintf( '%s %s #%d — %s%s', $sku, $is_new ? 'created' : 'updated', $product_id, $title, $variation_note )
 		);
 	}
 
 	private function outcome( $action, $message ) {
 		return array( 'action' => $action, 'message' => $message );
+	}
+
+	/**
+	 * Custom product-level attributes rather than global taxonomies: these
+	 * values are Etsy's, they differ per listing, and registering dozens of
+	 * global attribute taxonomies for them would clutter the store for no gain.
+	 */
+	private function build_attributes( array $attributes ) {
+		$out      = array();
+		$position = 0;
+
+		foreach ( $attributes as $attribute ) {
+			if ( empty( $attribute['name'] ) || empty( $attribute['options'] ) ) {
+				continue;
+			}
+			$object = new WC_Product_Attribute();
+			$object->set_id( 0 );
+			$object->set_name( $attribute['name'] );
+			$object->set_options( $attribute['options'] );
+			$object->set_position( $position++ );
+			$object->set_visible( true );
+			$object->set_variation( true );
+			$out[] = $object;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Bring the product's variations in line with the Etsy offerings.
+	 *
+	 * @return array { created, updated, removed }
+	 */
+	private function sync_variations( $product_id, array $item ) {
+		$counts = array( 'created' => 0, 'updated' => 0, 'removed' => 0 );
+		$prefix = $item['sku'] . '-';
+
+		$existing = array();
+		$parent   = wc_get_product( $product_id );
+		foreach ( $parent->get_children() as $child_id ) {
+			$child = wc_get_product( $child_id );
+			if ( $child ) {
+				$existing[ $child->get_sku() ] = $child;
+			}
+		}
+
+		$seen = array();
+
+		foreach ( $item['variants'] as $variant ) {
+			$variation = isset( $existing[ $variant['sku'] ] )
+				? $existing[ $variant['sku'] ]
+				: new WC_Product_Variation();
+
+			$is_new = ! $variation->get_id();
+
+			$attributes = array();
+			foreach ( $variant['attributes'] as $name => $value ) {
+				// Custom attributes key on the sanitised attribute name and
+				// store the option text verbatim.
+				$attributes[ sanitize_title( $name ) ] = $value;
+			}
+
+			$variation->set_parent_id( $product_id );
+			$variation->set_sku( $variant['sku'] );
+			$variation->set_attributes( $attributes );
+			$variation->set_regular_price( $variant['price'] );
+			$variation->set_manage_stock( true );
+			$variation->set_stock_quantity( max( 0, (int) $variant['quantity'] - $this->stock_buffer ) );
+			$variation->set_backorders( 'no' );
+			if ( $is_new ) {
+				$variation->set_status( 'publish' );
+			}
+			$variation->save();
+
+			$seen[ $variant['sku'] ] = true;
+			$counts[ $is_new ? 'created' : 'updated' ]++;
+		}
+
+		// A combination Etsy no longer offers must not remain buyable. Only
+		// this listing's own variations are touched.
+		foreach ( $existing as $sku => $variation ) {
+			if ( isset( $seen[ $sku ] ) ) {
+				continue;
+			}
+			if ( 0 !== strpos( (string) $sku, $prefix ) ) {
+				continue;
+			}
+			$variation->delete( true );
+			$counts['removed']++;
+		}
+
+		return $counts;
+	}
+
+	private function remove_all_variations( $product_id, $sku ) {
+		$parent = wc_get_product( $product_id );
+		if ( ! $parent || ! method_exists( $parent, 'get_children' ) ) {
+			return;
+		}
+		$prefix = $sku . '-';
+		foreach ( $parent->get_children() as $child_id ) {
+			$child = wc_get_product( $child_id );
+			if ( $child && 0 === strpos( (string) $child->get_sku(), $prefix ) ) {
+				$child->delete( true );
+			}
+		}
 	}
 
 	/**
@@ -164,7 +335,6 @@ class BDZ_Etsy_Importer {
 			}
 			$created = wp_insert_term( $name, $taxonomy );
 			if ( is_wp_error( $created ) ) {
-				// Term already exists under a colliding slug: reuse it.
 				$data = $created->get_error_data();
 				if ( is_array( $data ) && isset( $data['term_id'] ) ) {
 					$ids[] = (int) $data['term_id'];
@@ -182,8 +352,7 @@ class BDZ_Etsy_Importer {
 
 	/**
 	 * Sideload the Etsy images into the media library. Slow, which is why the
-	 * signature check above matters: without it every run re-downloads the
-	 * whole gallery.
+	 * signature check matters: without it every run re-downloads the gallery.
 	 *
 	 * Previously imported attachments are left in the media library rather than
 	 * deleted — this plugin does not delete things.

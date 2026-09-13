@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Etsy Sync for WooCommerce
  * Description: Imports and keeps in sync the Etsy catalogue as WooCommerce products. Etsy stays the source of truth; nothing here ever deletes a product.
- * Version:     1.0.4
+ * Version:     1.1.0
  * Requires PHP: 7.4
  * Author:      HarleysBooks
  * License:     GPL-2.0-or-later
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'BDZ_ETSY_VERSION', '1.0.4' );
+define( 'BDZ_ETSY_VERSION', '1.1.0' );
 define( 'BDZ_ETSY_FILE', __FILE__ );
 define( 'BDZ_ETSY_DIR', plugin_dir_path( __FILE__ ) );
 define( 'BDZ_ETSY_URL', plugin_dir_url( __FILE__ ) );
@@ -1060,6 +1060,13 @@ class BDZ_Etsy_Client {
  * This is the ONE place in the plugin where raw Etsy field names are allowed to
  * appear. If Etsy's v3 fields drift, fix them here and nowhere else — the same
  * rule the command-line importer follows, so the two cannot diverge.
+ *
+ * On variations: the live catalogue turned out to be almost entirely
+ * variable — Book crossed with Amount of Gems, or Book crossed with Tools on
+ * the spine-only kits, with price varying by property. An Etsy inventory
+ * "product" is one combination of property values carrying its own offering;
+ * that maps onto a WooCommerce variation, and the distinct property values map
+ * onto WooCommerce attributes.
  */
 
 class BDZ_Etsy_Normalize {
@@ -1082,6 +1089,119 @@ class BDZ_Etsy_Normalize {
 	}
 
 	/**
+	 * Pull the attribute set and the variant list out of an Etsy inventory
+	 * payload.
+	 *
+	 * Only enabled offerings become variants, and an attribute only offers a
+	 * value that some enabled variant actually uses — otherwise the storefront
+	 * shows a choice that cannot be bought.
+	 *
+	 * @return array { attributes: [{name, options[]}], variants: [...],
+	 *                 property_names: [], offering_count: int,
+	 *                 disabled_count: int }
+	 */
+	public static function variants( $listing_id, $inventory ) {
+		$attributes     = array();
+		$variants       = array();
+		$property_names = array();
+		$offering_count = 0;
+		$disabled_count = 0;
+		$min_price      = null;
+
+		if ( ! is_array( $inventory ) || empty( $inventory['products'] ) ) {
+			return compact( 'attributes', 'variants', 'property_names', 'offering_count', 'disabled_count', 'min_price' );
+		}
+
+		foreach ( $inventory['products'] as $product ) {
+			$values = array();
+			foreach ( ( isset( $product['property_values'] ) ? $product['property_values'] : array() ) as $property ) {
+				$name  = isset( $property['property_name'] ) ? trim( (string) $property['property_name'] ) : '';
+				$value = ( isset( $property['values'][0] ) ) ? trim( (string) $property['values'][0] ) : '';
+				if ( '' === $name || '' === $value ) {
+					continue;
+				}
+				$values[ $name ] = $value;
+				if ( ! in_array( $name, $property_names, true ) ) {
+					$property_names[] = $name;
+				}
+			}
+
+			$offerings = isset( $product['offerings'] ) ? $product['offerings'] : array();
+			if ( $offerings ) {
+				$offering_count++;
+			}
+
+			foreach ( $offerings as $offering ) {
+				$enabled = ! isset( $offering['is_enabled'] ) || $offering['is_enabled'];
+				if ( ! $enabled ) {
+					$disabled_count++;
+					continue;
+				}
+
+				list( $price ) = self::money( isset( $offering['price'] ) ? $offering['price'] : null );
+				if ( null === $price ) {
+					continue;
+				}
+
+				if ( null === $min_price || $price < $min_price ) {
+					$min_price = $price;
+				}
+
+				// A variant describes a choice. An offering with no property
+				// values is not one — it is just the listing's own price, and
+				// recording it as a variant would model an empty selection.
+				if ( ! $values ) {
+					break;
+				}
+
+				$variants[] = array(
+					// Stable and unique: the Etsy inventory product id never
+					// changes for a given combination, so re-runs update the
+					// same variation rather than churning them.
+					'sku'        => sprintf(
+						'%s%d-%d',
+						BDZ_ETSY_SKU_PREFIX,
+						$listing_id,
+						isset( $product['product_id'] ) ? (int) $product['product_id'] : count( $variants ) + 1
+					),
+					'attributes' => $values,
+					'price'      => number_format( $price, 2, '.', '' ),
+					'quantity'   => isset( $offering['quantity'] ) ? (int) $offering['quantity'] : 0,
+				);
+
+				foreach ( $values as $name => $value ) {
+					if ( ! isset( $attributes[ $name ] ) ) {
+						$attributes[ $name ] = array();
+					}
+					if ( ! in_array( $value, $attributes[ $name ], true ) ) {
+						$attributes[ $name ][] = $value;
+					}
+				}
+
+				// Etsy carries one offering per inventory product in practice;
+				// a second would have no distinct combination to sit on.
+				break;
+			}
+		}
+
+		$attribute_list = array();
+		foreach ( $attributes as $name => $options ) {
+			if ( $options ) {
+				$attribute_list[] = array( 'name' => $name, 'options' => array_values( $options ) );
+			}
+		}
+
+		return array(
+			'attributes'     => $attribute_list,
+			'variants'       => $variants,
+			'property_names' => $property_names,
+			'offering_count' => $offering_count,
+			'disabled_count' => $disabled_count,
+			'min_price'      => $min_price,
+		);
+	}
+
+	/**
 	 * @param array      $listing   Raw Etsy listing.
 	 * @param array      $images    Raw Etsy listing images.
 	 * @param array|null $inventory Raw Etsy inventory, or null.
@@ -1092,79 +1212,50 @@ class BDZ_Etsy_Normalize {
 
 		list( $price, $currency ) = self::money( isset( $listing['price'] ) ? $listing['price'] : null );
 
-		$property_names = array();
-		$offerings      = array();
+		$parsed     = self::variants( $listing_id, $inventory );
+		$variants   = $parsed['variants'];
+		$attributes = $parsed['attributes'];
 
-		if ( is_array( $inventory ) && ! empty( $inventory['products'] ) ) {
-			foreach ( $inventory['products'] as $product ) {
-				foreach ( ( isset( $product['property_values'] ) ? $product['property_values'] : array() ) as $value ) {
-					if ( ! empty( $value['property_name'] ) && ! in_array( $value['property_name'], $property_names, true ) ) {
-						$property_names[] = $value['property_name'];
-					}
-				}
-				foreach ( ( isset( $product['offerings'] ) ? $product['offerings'] : array() ) as $offering ) {
-					list( $offer_price, $offer_currency ) = self::money( isset( $offering['price'] ) ? $offering['price'] : null );
-					if ( null === $offer_price ) {
-						continue;
-					}
-					$offerings[] = array(
-						'price'    => $offer_price,
-						'currency' => $offer_currency,
-						'enabled'  => ! isset( $offering['is_enabled'] ) || $offering['is_enabled'],
-					);
-				}
-			}
-		}
+		// A listing is variable when there is a real choice to make: more than
+		// one buyable combination, described by at least one attribute.
+		$is_variable = ( count( $variants ) > 1 && $attributes );
 
-		// Some price-on-property listings carry no listing-level price; fall
-		// back to the cheapest enabled offering.
-		if ( null === $price && $offerings ) {
-			$enabled = array_filter(
-				$offerings,
-				function ( $offering ) {
-					return $offering['enabled'];
-				}
-			);
-			$pool = $enabled ? $enabled : $offerings;
-			usort(
-				$pool,
-				function ( $a, $b ) {
-					return $a['price'] <=> $b['price'];
-				}
-			);
-			$price    = $pool[0]['price'];
-			$currency = $currency ? $currency : $pool[0]['currency'];
-		}
-
-		$offering_count = 0;
-		if ( is_array( $inventory ) && ! empty( $inventory['products'] ) ) {
-			foreach ( $inventory['products'] as $product ) {
-				if ( ! empty( $product['offerings'] ) ) {
-					$offering_count++;
-				}
-			}
+		// Without a listing-level price, fall back to the cheapest buyable
+		// offering. For a variable product this only seeds the parent; each
+		// variation carries its own price.
+		if ( null === $price && null !== $parsed['min_price'] ) {
+			$price = $parsed['min_price'];
 		}
 
 		$price_on_property    = ( is_array( $inventory ) && ! empty( $inventory['price_on_property'] ) ) ? $inventory['price_on_property'] : array();
 		$quantity_on_property = ( is_array( $inventory ) && ! empty( $inventory['quantity_on_property'] ) ) ? $inventory['quantity_on_property'] : array();
 
-		$has_real_variations = ( $property_names && $offering_count > 1 );
-
-		// The catalogue mirrors Etsy 1:1, so a listing with real variations is
-		// still imported as a simple product — flagged, so consolidating it into
-		// a variable product stays a deliberate later decision.
+		// Review is now reserved for things that cannot be represented
+		// faithfully. Having variations is no longer one of them — they are
+		// imported as WooCommerce variations.
 		$review_reasons = array();
-		if ( $has_real_variations ) {
-			$review_reasons[] = sprintf( 'listing has %d offerings across %s', $offering_count, implode( ', ', $property_names ) );
-		}
-		if ( $price_on_property ) {
-			$review_reasons[] = 'price varies by property';
-		}
-		if ( $quantity_on_property ) {
-			$review_reasons[] = 'quantity varies by property';
-		}
-		if ( null === $price ) {
+		if ( null === $price && ! $is_variable ) {
 			$review_reasons[] = 'no price could be resolved';
+		}
+		// Not "no variants": a simple listing legitimately has none. The real
+		// fault is offerings existing but none of them being buyable.
+		if ( $parsed['offering_count'] > 0 && null === $parsed['min_price'] ) {
+			$review_reasons[] = 'listing has offerings but none are enabled or priced';
+		}
+		if ( $is_variable ) {
+			// Every variant must name a value for every attribute, or the
+			// storefront cannot resolve a selection to a variation.
+			foreach ( $variants as $variant ) {
+				foreach ( $attributes as $attribute ) {
+					if ( ! isset( $variant['attributes'][ $attribute['name'] ] ) ) {
+						$review_reasons[] = sprintf(
+							'a variation is missing a value for "%s"',
+							$attribute['name']
+						);
+						break 2;
+					}
+				}
+			}
 		}
 
 		$normalized_images = array();
@@ -1231,10 +1322,15 @@ class BDZ_Etsy_Normalize {
 			'materials'       => $materials,
 			'section'         => $section_title,
 			'images'          => $normalized_images,
-			'variations'      => array(
-				'has_variations'  => ( ! empty( $listing['has_variations'] ) || $has_real_variations ),
-				'offering_count'  => $offering_count,
-				'property_names'  => $property_names,
+			'is_variable'     => $is_variable,
+			'attributes'      => $attributes,
+			'variants'        => $variants,
+			'variation_meta'  => array(
+				'offering_count'       => $parsed['offering_count'],
+				'disabled_count'       => $parsed['disabled_count'],
+				'property_names'       => $parsed['property_names'],
+				'price_on_property'    => array_values( $price_on_property ),
+				'quantity_on_property' => array_values( $quantity_on_property ),
 			),
 			'review'          => ! empty( $review_reasons ),
 			'review_reasons'  => $review_reasons,
@@ -1285,6 +1381,18 @@ class BDZ_Etsy_Normalize {
 		}
 		return sha1( implode( '|', $urls ) );
 	}
+
+	/** Fingerprint of the variant set, so a run can report that it changed. */
+	public static function variant_signature( array $item ) {
+		$parts = array();
+		foreach ( ( isset( $item['variants'] ) ? $item['variants'] : array() ) as $variant ) {
+			$values = $variant['attributes'];
+			ksort( $values );
+			$parts[] = $variant['sku'] . '|' . implode( ',', $values ) . '|' . $variant['price'] . '|' . $variant['quantity'];
+		}
+		sort( $parts );
+		return sha1( implode( ';', $parts ) );
+	}
 }
 
 /* ---- includes/class-bdz-importer.php ---- */
@@ -1292,17 +1400,21 @@ class BDZ_Etsy_Normalize {
 /**
  * Neutral catalogue item -> WooCommerce product.
  *
- * The safety rules here are the same ones the command-line importer follows,
- * and they exist because this runs unattended:
+ * The safety rules here exist because this runs unattended:
  *
  *   - Products are matched by SKU (etsy-<listing_id>), so a re-run updates in
  *     place instead of creating a second copy.
- *   - A store product that is not simple is SKIPPED, never flattened. Pushing
- *     a simple product at a variable one orphans its variations.
  *   - Status is set on create only, so a product the owner unpublished stays
  *     unpublished.
  *   - Images are only re-imported when the Etsy image set actually changed.
- *   - Nothing is ever deleted.
+ *   - A product this plugin did not create is never converted between simple
+ *     and variable; it is skipped.
+ *   - No product is ever deleted.
+ *
+ * Variations are the one thing that does get deleted, and only ever the
+ * plugin's own: a variation whose Etsy offering has gone would otherwise sit in
+ * the storefront as a buyable combination that no longer exists. Deletion is
+ * scoped to children whose SKU carries this listing's own prefix.
  */
 
 class BDZ_Etsy_Importer {
@@ -1331,37 +1443,67 @@ class BDZ_Etsy_Importer {
 	 * @return array { action: created|updated|skipped|failed, message: string }
 	 */
 	public function import_item( array $item ) {
-		$sku   = $item['sku'];
-		$title = $item['title'];
+		$sku         = $item['sku'];
+		$title       = $item['title'];
+		$is_variable = ! empty( $item['is_variable'] );
+		$target_type = $is_variable ? 'variable' : 'simple';
 
-		if ( '' === $item['price'] ) {
+		if ( ! $is_variable && '' === $item['price'] ) {
 			return $this->outcome( 'failed', sprintf( '%s has no price — skipped. %s', $sku, $title ) );
+		}
+		if ( $is_variable && empty( $item['variants'] ) ) {
+			return $this->outcome( 'failed', sprintf( '%s is variable but has no buyable variations — skipped. %s', $sku, $title ) );
 		}
 
 		$product_id = wc_get_product_id_by_sku( $sku );
 		$existing   = $product_id ? wc_get_product( $product_id ) : null;
 
-		if ( $existing && 'simple' !== $existing->get_type() ) {
+		if ( $existing && $existing->get_type() !== $target_type ) {
+			// Converting a product this plugin created is legitimate — Etsy is
+			// the source of truth and a listing can gain or lose its options.
+			// Converting someone else's product is not.
+			$is_ours = '' !== (string) get_post_meta( $product_id, self::META_LISTING_ID, true );
+			if ( ! $is_ours ) {
+				return $this->outcome(
+					'skipped',
+					sprintf(
+						'%s is a "%s" product in the store (#%d) and this plugin did not create it — importing would convert it to %s and orphan its variations. Skipped.',
+						$sku,
+						$existing->get_type(),
+						$product_id,
+						$target_type
+					)
+				);
+			}
+		}
+
+		if ( $this->dry_run ) {
+			$shape = $is_variable
+				? sprintf( 'variable, %d variation(s)', count( $item['variants'] ) )
+				: 'simple';
 			return $this->outcome(
-				'skipped',
+				$existing ? 'updated' : 'created',
 				sprintf(
-					'%s is a "%s" product in the store (#%d) — importing would convert it to simple and orphan its variations. Skipped.',
+					'%s would %s — %s [%s]',
 					$sku,
-					$existing->get_type(),
-					$product_id
+					$existing ? 'update #' . $product_id : 'be created',
+					$title,
+					$shape
 				)
 			);
 		}
 
-		if ( $this->dry_run ) {
-			return $this->outcome(
-				$existing ? 'updated' : 'created',
-				sprintf( '%s would %s — %s', $sku, $existing ? 'update #' . $product_id : 'be created', $title )
-			);
-		}
+		$is_new = ! $existing;
 
-		$product = $existing ? $existing : new WC_Product_Simple();
-		$is_new  = ! $existing;
+		// A type change has to go through a fresh object: WooCommerce decides
+		// behaviour from the class, not from a settable field.
+		if ( $existing && $existing->get_type() !== $target_type ) {
+			$product = $is_variable ? new WC_Product_Variable( $product_id ) : new WC_Product_Simple( $product_id );
+		} elseif ( $existing ) {
+			$product = $existing;
+		} else {
+			$product = $is_variable ? new WC_Product_Variable() : new WC_Product_Simple();
+		}
 
 		$product->set_name( $title );
 		$product->set_sku( $sku );
@@ -1369,13 +1511,22 @@ class BDZ_Etsy_Importer {
 		$product->set_short_description(
 			BDZ_Etsy_Normalize::text_to_html( BDZ_Etsy_Normalize::first_paragraph( $item['description'] ) )
 		);
-		$product->set_regular_price( $item['price'] );
-		$product->set_manage_stock( true );
-		$product->set_stock_quantity( max( 0, (int) $item['quantity'] - $this->stock_buffer ) );
-		$product->set_backorders( 'no' );
 		$product->set_catalog_visibility( 'visible' );
 
-		// Only on create — an owner unpublishing something must stick.
+		if ( $is_variable ) {
+			// Price and stock live on the variations; the parent must not carry
+			// its own or WooCommerce shows a price that belongs to nothing.
+			$product->set_regular_price( '' );
+			$product->set_manage_stock( false );
+			$product->set_attributes( $this->build_attributes( $item['attributes'] ) );
+		} else {
+			$product->set_regular_price( $item['price'] );
+			$product->set_manage_stock( true );
+			$product->set_stock_quantity( max( 0, (int) $item['quantity'] - $this->stock_buffer ) );
+			$product->set_backorders( 'no' );
+			$product->set_attributes( array() );
+		}
+
 		if ( $is_new ) {
 			$product->set_status( $this->new_status );
 		}
@@ -1383,6 +1534,21 @@ class BDZ_Etsy_Importer {
 		$product_id = $product->save();
 		if ( ! $product_id ) {
 			return $this->outcome( 'failed', sprintf( '%s could not be saved.', $sku ) );
+		}
+
+		$variation_note = '';
+		if ( $is_variable ) {
+			$counts         = $this->sync_variations( $product_id, $item );
+			$variation_note = sprintf(
+				' [%d variation(s): +%d ~%d -%d]',
+				count( $item['variants'] ),
+				$counts['created'],
+				$counts['updated'],
+				$counts['removed']
+			);
+		} else {
+			// Dropping back to simple: clear out any variations left behind.
+			$this->remove_all_variations( $product_id, $item['sku'] );
 		}
 
 		$this->apply_terms( $product_id, $item );
@@ -1406,14 +1572,127 @@ class BDZ_Etsy_Importer {
 			delete_post_meta( $product_id, self::META_REVIEW );
 		}
 
+		if ( $is_variable ) {
+			// Recalculates the parent's displayed price range from the
+			// variations that now exist.
+			WC_Product_Variable::sync( $product_id );
+		}
+		wc_delete_product_transients( $product_id );
+
 		return $this->outcome(
 			$is_new ? 'created' : 'updated',
-			sprintf( '%s %s #%d — %s', $sku, $is_new ? 'created' : 'updated', $product_id, $title )
+			sprintf( '%s %s #%d — %s%s', $sku, $is_new ? 'created' : 'updated', $product_id, $title, $variation_note )
 		);
 	}
 
 	private function outcome( $action, $message ) {
 		return array( 'action' => $action, 'message' => $message );
+	}
+
+	/**
+	 * Custom product-level attributes rather than global taxonomies: these
+	 * values are Etsy's, they differ per listing, and registering dozens of
+	 * global attribute taxonomies for them would clutter the store for no gain.
+	 */
+	private function build_attributes( array $attributes ) {
+		$out      = array();
+		$position = 0;
+
+		foreach ( $attributes as $attribute ) {
+			if ( empty( $attribute['name'] ) || empty( $attribute['options'] ) ) {
+				continue;
+			}
+			$object = new WC_Product_Attribute();
+			$object->set_id( 0 );
+			$object->set_name( $attribute['name'] );
+			$object->set_options( $attribute['options'] );
+			$object->set_position( $position++ );
+			$object->set_visible( true );
+			$object->set_variation( true );
+			$out[] = $object;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Bring the product's variations in line with the Etsy offerings.
+	 *
+	 * @return array { created, updated, removed }
+	 */
+	private function sync_variations( $product_id, array $item ) {
+		$counts = array( 'created' => 0, 'updated' => 0, 'removed' => 0 );
+		$prefix = $item['sku'] . '-';
+
+		$existing = array();
+		$parent   = wc_get_product( $product_id );
+		foreach ( $parent->get_children() as $child_id ) {
+			$child = wc_get_product( $child_id );
+			if ( $child ) {
+				$existing[ $child->get_sku() ] = $child;
+			}
+		}
+
+		$seen = array();
+
+		foreach ( $item['variants'] as $variant ) {
+			$variation = isset( $existing[ $variant['sku'] ] )
+				? $existing[ $variant['sku'] ]
+				: new WC_Product_Variation();
+
+			$is_new = ! $variation->get_id();
+
+			$attributes = array();
+			foreach ( $variant['attributes'] as $name => $value ) {
+				// Custom attributes key on the sanitised attribute name and
+				// store the option text verbatim.
+				$attributes[ sanitize_title( $name ) ] = $value;
+			}
+
+			$variation->set_parent_id( $product_id );
+			$variation->set_sku( $variant['sku'] );
+			$variation->set_attributes( $attributes );
+			$variation->set_regular_price( $variant['price'] );
+			$variation->set_manage_stock( true );
+			$variation->set_stock_quantity( max( 0, (int) $variant['quantity'] - $this->stock_buffer ) );
+			$variation->set_backorders( 'no' );
+			if ( $is_new ) {
+				$variation->set_status( 'publish' );
+			}
+			$variation->save();
+
+			$seen[ $variant['sku'] ] = true;
+			$counts[ $is_new ? 'created' : 'updated' ]++;
+		}
+
+		// A combination Etsy no longer offers must not remain buyable. Only
+		// this listing's own variations are touched.
+		foreach ( $existing as $sku => $variation ) {
+			if ( isset( $seen[ $sku ] ) ) {
+				continue;
+			}
+			if ( 0 !== strpos( (string) $sku, $prefix ) ) {
+				continue;
+			}
+			$variation->delete( true );
+			$counts['removed']++;
+		}
+
+		return $counts;
+	}
+
+	private function remove_all_variations( $product_id, $sku ) {
+		$parent = wc_get_product( $product_id );
+		if ( ! $parent || ! method_exists( $parent, 'get_children' ) ) {
+			return;
+		}
+		$prefix = $sku . '-';
+		foreach ( $parent->get_children() as $child_id ) {
+			$child = wc_get_product( $child_id );
+			if ( $child && 0 === strpos( (string) $child->get_sku(), $prefix ) ) {
+				$child->delete( true );
+			}
+		}
 	}
 
 	/**
@@ -1450,7 +1729,6 @@ class BDZ_Etsy_Importer {
 			}
 			$created = wp_insert_term( $name, $taxonomy );
 			if ( is_wp_error( $created ) ) {
-				// Term already exists under a colliding slug: reuse it.
 				$data = $created->get_error_data();
 				if ( is_array( $data ) && isset( $data['term_id'] ) ) {
 					$ids[] = (int) $data['term_id'];
@@ -1468,8 +1746,7 @@ class BDZ_Etsy_Importer {
 
 	/**
 	 * Sideload the Etsy images into the media library. Slow, which is why the
-	 * signature check above matters: without it every run re-downloads the
-	 * whole gallery.
+	 * signature check matters: without it every run re-downloads the gallery.
 	 *
 	 * Previously imported attachments are left in the media library rather than
 	 * deleted — this plugin does not delete things.
@@ -1621,8 +1898,9 @@ class BDZ_Etsy_Job {
 	/** Listings normalized per tick. Cheap: two API calls each. */
 	const INVENTORY_BATCH = 6;
 
-	/** Products imported per tick. Small: image sideloading dominates. */
-	const PUSH_BATCH = 3;
+	/** Products imported per tick. Small: image sideloading dominates, and a
+	 * variable product writes a row per variation on top of that. */
+	const PUSH_BATCH = 2;
 
 	private $state;
 
@@ -1645,11 +1923,12 @@ class BDZ_Etsy_Job {
 			'sections'  => array(),
 			'listings'  => array(),
 			'stats'     => array(
-				'created' => 0,
-				'updated' => 0,
-				'skipped' => 0,
-				'failed'  => 0,
-				'review'  => 0,
+				'created'  => 0,
+				'updated'  => 0,
+				'skipped'  => 0,
+				'failed'   => 0,
+				'review'   => 0,
+				'variable' => 0,
 			),
 		);
 	}
@@ -1811,6 +2090,10 @@ class BDZ_Etsy_Job {
 
 			$item      = BDZ_Etsy_Normalize::listing( $listing, $images, $inventory, $sections );
 			$catalog[] = $item;
+
+			if ( ! empty( $item['is_variable'] ) ) {
+				$this->state['stats']['variable']++;
+			}
 
 			if ( $item['review'] ) {
 				$this->state['stats']['review']++;
@@ -1991,6 +2274,16 @@ class BDZ_Etsy_Job {
 
 			if ( BDZ_Etsy_Normalize::image_signature( $old ) !== BDZ_Etsy_Normalize::image_signature( $item ) ) {
 				$changes[] = sprintf( 'images: %d -> %d', count( $old['images'] ), count( $item['images'] ) );
+			}
+
+			// Variation prices and stock move independently of the parent, so
+			// compare the whole set or those changes go unreported.
+			if ( BDZ_Etsy_Normalize::variant_signature( $old ) !== BDZ_Etsy_Normalize::variant_signature( $item ) ) {
+				$changes[] = sprintf(
+					'variations: %d -> %d (prices or stock changed)',
+					count( isset( $old['variants'] ) ? $old['variants'] : array() ),
+					count( isset( $item['variants'] ) ? $item['variants'] : array() )
+				);
 			}
 
 			if ( $changes ) {
