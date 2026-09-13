@@ -92,14 +92,14 @@ def build():
         " * wp-plugin/build-single-file.py. Edit the sources, not this file.\n",
     )
 
-    header, _, bootstrap = main.partition("define( 'BDZ_ETSY_SKU_PREFIX', 'etsy-' );")
-    if not bootstrap:
-        raise SystemExit("could not find the SKU prefix define in the main file")
+    # Split on an explicit marker rather than on whichever constant happens to
+    # be last: renaming a constant should not silently reshape the build.
+    marker = "/* ---- end of bootstrap constants ---- */"
+    header, found, bootstrap = main.partition(marker)
+    if not found:
+        raise SystemExit("missing %r in the main plugin file" % marker)
 
-    parts = [
-        header.rstrip() + "\n",
-        "define( 'BDZ_ETSY_SKU_PREFIX', 'etsy-' );\n",
-    ]
+    parts = [header.rstrip() + "\n"]
 
     # Compiled assets first, so class_exists() is already true when the admin
     # class is defined and, more importantly, when it enqueues.

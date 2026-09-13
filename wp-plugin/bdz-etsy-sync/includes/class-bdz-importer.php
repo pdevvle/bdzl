@@ -62,7 +62,22 @@ class BDZ_Etsy_Importer {
 		}
 
 		$product_id = wc_get_product_id_by_sku( $sku );
-		$existing   = $product_id ? wc_get_product( $product_id ) : null;
+		$renamed_from = '';
+
+		// SKUs were "etsy-<id>" before 1.2.0. Find such a product and adopt it,
+		// or this run would create a second copy of the whole catalogue beside
+		// the originals. Only products carrying the listing-id meta are adopted,
+		// so a coincidental SKU belonging to someone else is left alone.
+		if ( ! $product_id ) {
+			$legacy_sku = BDZ_ETSY_LEGACY_SKU_PREFIX . $sku;
+			$legacy_id  = wc_get_product_id_by_sku( $legacy_sku );
+			if ( $legacy_id && '' !== (string) get_post_meta( $legacy_id, self::META_LISTING_ID, true ) ) {
+				$product_id   = $legacy_id;
+				$renamed_from = $legacy_sku;
+			}
+		}
+
+		$existing = $product_id ? wc_get_product( $product_id ) : null;
 
 		if ( $existing && $existing->get_type() !== $target_type ) {
 			// Converting a product this plugin created is legitimate — Etsy is
@@ -90,11 +105,12 @@ class BDZ_Etsy_Importer {
 			return $this->outcome(
 				$existing ? 'updated' : 'created',
 				sprintf(
-					'%s would %s — %s [%s]',
+					'%s would %s — %s [%s]%s',
 					$sku,
 					$existing ? 'update #' . $product_id : 'be created',
 					$title,
-					$shape
+					$shape,
+					$renamed_from ? sprintf( ' (SKU renamed from %s)', $renamed_from ) : ''
 				)
 			);
 		}
@@ -187,7 +203,15 @@ class BDZ_Etsy_Importer {
 
 		return $this->outcome(
 			$is_new ? 'created' : 'updated',
-			sprintf( '%s %s #%d — %s%s', $sku, $is_new ? 'created' : 'updated', $product_id, $title, $variation_note )
+			sprintf(
+				'%s %s #%d — %s%s%s',
+				$sku,
+				$is_new ? 'created' : 'updated',
+				$product_id,
+				$title,
+				$variation_note,
+				$renamed_from ? sprintf( ' (SKU renamed from %s)', $renamed_from ) : ''
+			)
 		);
 	}
 
@@ -242,9 +266,17 @@ class BDZ_Etsy_Importer {
 		$seen = array();
 
 		foreach ( $item['variants'] as $variant ) {
-			$variation = isset( $existing[ $variant['sku'] ] )
-				? $existing[ $variant['sku'] ]
-				: new WC_Product_Variation();
+			$legacy_sku = BDZ_ETSY_LEGACY_SKU_PREFIX . $variant['sku'];
+
+			if ( isset( $existing[ $variant['sku'] ] ) ) {
+				$variation = $existing[ $variant['sku'] ];
+			} elseif ( isset( $existing[ $legacy_sku ] ) ) {
+				// Pre-1.2.0 child. Adopt and rename rather than duplicate.
+				$variation      = $existing[ $legacy_sku ];
+				$seen[ $legacy_sku ] = true;
+			} else {
+				$variation = new WC_Product_Variation();
+			}
 
 			$is_new = ! $variation->get_id();
 
@@ -272,12 +304,14 @@ class BDZ_Etsy_Importer {
 		}
 
 		// A combination Etsy no longer offers must not remain buyable. Only
-		// this listing's own variations are touched.
+		// this listing's own variations are touched — in either SKU shape.
+		$legacy_prefix = BDZ_ETSY_LEGACY_SKU_PREFIX . $prefix;
 		foreach ( $existing as $sku => $variation ) {
 			if ( isset( $seen[ $sku ] ) ) {
 				continue;
 			}
-			if ( 0 !== strpos( (string) $sku, $prefix ) ) {
+			$sku = (string) $sku;
+			if ( 0 !== strpos( $sku, $prefix ) && 0 !== strpos( $sku, $legacy_prefix ) ) {
 				continue;
 			}
 			$variation->delete( true );
@@ -292,10 +326,15 @@ class BDZ_Etsy_Importer {
 		if ( ! $parent || ! method_exists( $parent, 'get_children' ) ) {
 			return;
 		}
-		$prefix = $sku . '-';
+		$prefix        = $sku . '-';
+		$legacy_prefix = BDZ_ETSY_LEGACY_SKU_PREFIX . $prefix;
 		foreach ( $parent->get_children() as $child_id ) {
 			$child = wc_get_product( $child_id );
-			if ( $child && 0 === strpos( (string) $child->get_sku(), $prefix ) ) {
+			if ( ! $child ) {
+				continue;
+			}
+			$child_sku = (string) $child->get_sku();
+			if ( 0 === strpos( $child_sku, $prefix ) || 0 === strpos( $child_sku, $legacy_prefix ) ) {
 				$child->delete( true );
 			}
 		}
@@ -396,11 +435,17 @@ class BDZ_Etsy_Importer {
 	 * Products whose Etsy listing is no longer active are set to draft. They
 	 * are never deleted — pulling something from sale is reversible.
 	 *
+	 * Ownership is decided by the listing-id meta, never by the SKU. A prefix
+	 * test would be actively dangerous now that SKUs are bare ids: strpos()
+	 * against an empty prefix matches every product, which would draft the
+	 * entire store. The meta is also what survives the 1.2.0 SKU rename.
+	 *
+	 * @param array $known_listing_ids Listing ids present in this run's catalogue.
 	 * @return array SKUs drafted.
 	 */
-	public static function draft_missing( array $known_skus ) {
+	public static function draft_missing( array $known_listing_ids ) {
 		$drafted = array();
-		$known   = array_flip( $known_skus );
+		$known   = array_flip( array_map( 'strval', $known_listing_ids ) );
 
 		$query = new WP_Query(
 			array(
@@ -423,14 +468,15 @@ class BDZ_Etsy_Importer {
 			if ( ! $product ) {
 				continue;
 			}
-			$sku = $product->get_sku();
-			if ( ! $sku || 0 !== strpos( $sku, BDZ_ETSY_SKU_PREFIX ) ) {
+			$listing_id = (string) get_post_meta( $product_id, self::META_LISTING_ID, true );
+			if ( '' === $listing_id ) {
 				continue;
 			}
-			if ( isset( $known[ $sku ] ) ) {
+			if ( isset( $known[ $listing_id ] ) ) {
 				continue;
 			}
 
+			$sku = $product->get_sku();
 			$product->set_status( 'draft' );
 			$product->save();
 			$drafted[] = $sku;

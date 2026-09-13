@@ -308,11 +308,11 @@ class BDZ_Etsy_Job {
 
 		$drafted = array();
 		if ( ! $this->state['dry_run'] && BDZ_Etsy_Settings::get_bool( 'draft_missing' ) ) {
-			$skus = array();
+			$listing_ids = array();
 			foreach ( $catalog as $item ) {
-				$skus[] = $item['sku'];
+				$listing_ids[] = $item['etsy_listing_id'];
 			}
-			$drafted = BDZ_Etsy_Importer::draft_missing( $skus );
+			$drafted = BDZ_Etsy_Importer::draft_missing( $listing_ids );
 		}
 
 		$previous = get_option( self::PREVIOUS_OPTION, array() );

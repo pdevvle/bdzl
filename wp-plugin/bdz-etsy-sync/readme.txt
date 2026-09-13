@@ -39,8 +39,14 @@ ninety days, the shop owner reconnects.
 
 == What it does, and what it refuses to do ==
 
-Products are matched by the SKU `etsy-<listing_id>`, so re-running updates in
-place instead of creating a second copy of everything.
+Products are matched by SKU, which is the **bare Etsy listing id** (e.g.
+`4438592263`); variations are `<listing_id>-<inventory_product_id>`. Re-running
+updates in place instead of creating a second copy of everything.
+
+Products imported before 1.2.0 used an `etsy-` prefix. They are found, adopted
+and renamed on the next sync — not duplicated. Ownership is decided by the
+listing-id meta, never by the SKU, so products the plugin did not create are
+never claimed.
 
 * New products are created as **drafts** by default. A listing appearing on Etsy
   should not publish itself into the store unreviewed.
@@ -97,8 +103,7 @@ match the Etsy app registration byte for byte, including any trailing slash.
 
 *Products have no SKU* warning — those products cannot be matched, so an import
 will create duplicates alongside them. Either give a product the matching
-`etsy-<listing_id>` SKU to adopt it, or draft it and let the import create a
-clean one.
+listing-id SKU to adopt it, or draft it and let the import create a clean one.
 
 == Relationship to the command-line importer ==
 

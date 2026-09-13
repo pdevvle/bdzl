@@ -14,11 +14,12 @@ Re-runnability
 --------------
 Every product carries the Etsy listing id in two places:
 
-    SKU        etsy-<listing_id>
+    SKU        <listing_id>            (variations: <listing_id>-<product_id>)
     meta_data  etsy_listing_id
 
 Phase 2 looks a product up by SKU first, so a second run updates in place
-instead of creating duplicates.
+instead of creating duplicates. Ownership — "did this importer create this
+product?" — is decided by the meta, never by the SKU.
 
 Field mapping
 -------------
@@ -119,7 +120,13 @@ WOO_API_PATH = "/wp-json/wc/v3"
 DEFAULT_CATALOG = "catalog.json"
 DEFAULT_IMAGE_DIR = "images"
 
-SKU_PREFIX = "etsy-"
+# Product SKUs are the bare Etsy listing id. Products written before the
+# rename carry this prefix and are adopted rather than duplicated.
+#
+# Ownership is decided by the etsy_listing_id meta, never by a SKU prefix:
+# "".startswith("") is True, so a prefix test against bare ids would claim
+# every product in the store.
+LEGACY_SKU_PREFIX = "etsy-"
 
 # Etsy allows 10 requests/second. Stay well under it; a 52-listing shop is
 # not in a hurry.
@@ -586,8 +593,8 @@ def _variants(listing_id, inventory):
                     # Stable and unique: the Etsy inventory product id does not
                     # change for a combination, so re-runs update the same
                     # variation instead of churning them.
-                    "sku": "%s%d-%d"
-                    % (SKU_PREFIX, listing_id,
+                    "sku": "%d-%d"
+                    % (listing_id,
                        int(product.get("product_id") or (len(variants) + 1))),
                     "attributes": values,
                     "price": "%.2f" % price,
@@ -728,7 +735,7 @@ def _normalize_listing(listing, images, inventory, sections):
 
     return {
         "etsy_listing_id": listing_id,
-        "sku": "%s%d" % (SKU_PREFIX, listing_id),
+        "sku": "%d" % listing_id,
         "title": (listing.get("title") or "").strip(),
         "description": listing.get("description") or "",
         "price": ("%.2f" % price) if price is not None else None,
@@ -1122,6 +1129,15 @@ def _load_catalog(path):
     return data
 
 
+def _managed_listing_id(product):
+    """The Etsy listing id this store product was imported from, or None.
+
+    This, not the SKU, is what marks a product as ours.
+    """
+    value = _existing_meta(product, "etsy_listing_id")
+    return str(value) if value not in (None, "") else None
+
+
 def _existing_meta(product, key):
     for entry in product.get("meta_data") or []:
         if entry.get("key") == key:
@@ -1329,16 +1345,16 @@ def cmd_push(args):
 
 
 def _deactivate_missing(client, items):
-    """Draft any etsy-* product whose listing is no longer active on Etsy."""
-    known = {item["sku"] for item in items}
+    """Draft any imported product whose listing is no longer active on Etsy."""
+    known = {str(item["etsy_listing_id"]) for item in items}
     _log("")
     _log("Checking for products whose Etsy listing is gone…")
     stale = []
     for product in client.iter_products():
-        sku = product.get("sku") or ""
-        if not sku.startswith(SKU_PREFIX):
+        listing_id = _managed_listing_id(product)
+        if listing_id is None:
             continue
-        if sku in known:
+        if listing_id in known:
             continue
         if product.get("status") == "draft":
             continue
@@ -1392,9 +1408,8 @@ def cmd_status(args):
 
     store_skus = {}
     for product in client.iter_products():
-        sku = product.get("sku") or ""
-        if sku.startswith(SKU_PREFIX):
-            store_skus[sku] = product
+        if _managed_listing_id(product) is not None:
+            store_skus[product.get("sku") or ""] = product
     _log("  imported products: %d" % len(store_skus))
 
     catalog_skus = {item["sku"] for item in items}

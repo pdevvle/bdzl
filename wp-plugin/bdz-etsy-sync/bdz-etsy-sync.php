@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Etsy Sync for WooCommerce
  * Description: Imports and keeps in sync the Etsy catalogue as WooCommerce products. Etsy stays the source of truth; nothing here ever deletes a product.
- * Version:     1.1.0
+ * Version:     1.2.0
  * Requires PHP: 7.4
  * Author:      HarleysBooks
  * License:     GPL-2.0-or-later
@@ -19,13 +19,26 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'BDZ_ETSY_VERSION', '1.1.0' );
+define( 'BDZ_ETSY_VERSION', '1.2.0' );
 define( 'BDZ_ETSY_FILE', __FILE__ );
 define( 'BDZ_ETSY_DIR', plugin_dir_path( __FILE__ ) );
 define( 'BDZ_ETSY_URL', plugin_dir_url( __FILE__ ) );
 
-/** Every product this plugin manages carries this SKU prefix. */
-define( 'BDZ_ETSY_SKU_PREFIX', 'etsy-' );
+/**
+ * Product SKUs are the bare Etsy listing id. The number is a genuine reference
+ * both the shop owner and a customer can quote, and it does not advertise Etsy
+ * on the storefront.
+ *
+ * Products imported before 1.2.0 carry an "etsy-" prefix. Ownership is NOT
+ * determined by that prefix — it is determined by the listing-id meta below.
+ * That matters: an empty prefix would make a strpos() check match every product
+ * in the store, so a prefix test could quietly claim products this plugin never
+ * created. The legacy prefix survives only so existing products are found and
+ * renamed rather than duplicated.
+ */
+define( 'BDZ_ETSY_LEGACY_SKU_PREFIX', 'etsy-' );
+
+/* ---- end of bootstrap constants ---- */
 
 require_once BDZ_ETSY_DIR . 'includes/class-bdz-logger.php';
 require_once BDZ_ETSY_DIR . 'includes/class-bdz-settings.php';

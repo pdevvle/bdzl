@@ -531,7 +531,7 @@ def _check_woo(report, args):
         report.add("warn", "could not enumerate products: %s" % exc)
         return
 
-    imported = [p for p in products if (p.get("sku") or "").startswith(imp.SKU_PREFIX)]
+    imported = [p for p in products if imp._managed_listing_id(p) is not None]
     no_sku = [p for p in products if not (p.get("sku") or "").strip()]
     not_simple = [p for p in imported if p.get("type") not in (None, "", "simple")]
 

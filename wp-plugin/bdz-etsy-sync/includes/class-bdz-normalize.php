@@ -108,8 +108,7 @@ class BDZ_Etsy_Normalize {
 					// changes for a given combination, so re-runs update the
 					// same variation rather than churning them.
 					'sku'        => sprintf(
-						'%s%d-%d',
-						BDZ_ETSY_SKU_PREFIX,
+						'%d-%d',
 						$listing_id,
 						isset( $product['product_id'] ) ? (int) $product['product_id'] : count( $variants ) + 1
 					),
@@ -260,7 +259,7 @@ class BDZ_Etsy_Normalize {
 
 		return array(
 			'etsy_listing_id' => $listing_id,
-			'sku'             => BDZ_ETSY_SKU_PREFIX . $listing_id,
+			'sku'             => (string) $listing_id,
 			'title'           => isset( $listing['title'] ) ? trim( $listing['title'] ) : '',
 			'description'     => isset( $listing['description'] ) ? $listing['description'] : '',
 			'price'           => ( null !== $price ) ? number_format( $price, 2, '.', '' ) : '',
