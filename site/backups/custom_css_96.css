@@ -1,0 +1,29 @@
+/* Header overlay fix */
+div.elementor.elementor-19815.elementor-type-header.elementor-location-header{
+	position:relative;
+	z-index:100!important;
+}
+
+.site-content {
+	position:relative;
+	z-index:0!important;
+}
+
+/* woocommerce single product */
+
+.uni-align-center {
+
+	display: flex;flex-wrap: 	
+	wrap;justify-content: center;
+}
+
+/*single product edits*/
+
+.woocommerce div.product form.cart .button.single_add_to_cart_button {
+ margin: 0;
+ width:100%;
+}
+
+.single-product div.product p.price, .single-product div.product span.price {
+	text-align:center;
+}
