@@ -734,6 +734,52 @@ label,
 	.woocommerce ul.products li.product .button { margin: 10px 12px 14px; padding: 9px 14px; font-size: 0.85rem; }
 }
 
+/* --------------------------------------------------------------------------
+   Home page media tiles
+   Block markup carries the class, the crop lives here. Spectra's responsive
+   controls extension strips inline styles from core/image, so aspect ratios
+   cannot be set on the block itself.
+   -------------------------------------------------------------------------- */
+
+.hb-tile img,
+.hb-shot img,
+.hb-wide img,
+.hb-4x3 img {
+	width: 100%;
+	object-fit: cover;
+	border-radius: 8px;
+	display: block;
+}
+
+.hb-tile img { aspect-ratio: 3 / 4; }
+.hb-shot img { aspect-ratio: 4 / 5; }
+.hb-wide img { aspect-ratio: 16 / 9; }
+.hb-4x3 img { aspect-ratio: 4 / 3; }
+
+.hb-tile figure,
+.hb-shot figure,
+.hb-wide figure,
+.hb-4x3 figure,
+.hb-card-media figure { margin: 0; }
+
+.hb-card-media img {
+	width: 100%;
+	aspect-ratio: 4 / 5;
+	object-fit: cover;
+	border-radius: 8px 8px 0 0;
+	display: block;
+}
+
+a.wp-block-spectra-container.hb-card {
+	text-decoration: none;
+	transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+
+a.wp-block-spectra-container.hb-card:hover {
+	transform: translateY(-3px);
+	box-shadow: var(--hb-shadow);
+}
+
 @media (prefers-reduced-motion: reduce) {
 	*,
 	*::before,
