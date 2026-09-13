@@ -45,6 +45,10 @@ body {
 	line-height: 1.7;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
+	/* Full-bleed sections break out with 100vw, which is a scrollbar wider than
+	   the content box on desktop. clip (not hidden) trims that overhang without
+	   turning body into a scroll container, so position:sticky still works. */
+	overflow-x: clip;
 }
 
 h1, h2, h3, h4, h5, h6,
@@ -76,12 +80,27 @@ a:hover, a:focus { color: var(--hb-accent-dark); }
 .ast-container-fluid { max-width: 1160px; }
 
 /* Stretched / page-builder templates must stay edge to edge: the rule above
-   would otherwise cap full-bleed sections at the content width. */
+   would otherwise cap full-bleed sections at the content width. Astra names
+   this layout differently across versions, so match every spelling — and only
+   inside #content, never the header or footer containers. */
 .ast-page-builder-template .ast-container,
-.ast-page-builder-template .ast-container-fluid {
+.ast-page-builder-template .ast-container-fluid,
+.ast-page-builder-template #content > .ast-container,
+.ast-full-width-layout #content > .ast-container,
+.ast-plain-container #content > .ast-container,
+.home #content > .ast-container,
+.home #content > .ast-container-fluid {
 	max-width: 100%;
 	padding-left: 0;
 	padding-right: 0;
+}
+
+/* Stretched pages own their own vertical rhythm. */
+.ast-page-builder-template #primary,
+.ast-full-width-layout #content > .ast-container #primary,
+.home #content #primary {
+	margin: 0;
+	padding: 0;
 }
 
 /* Page title band on inner pages */
@@ -539,6 +558,158 @@ label,
 	color: var(--hb-ink);
 	border-bottom-color: var(--hb-accent);
 }
+
+/* --------------------------------------------------------------------------
+   Single product — velvet summary panel
+   Picks up the homepage's dark gradient so the product page reads as the same
+   shop. CSS only: no template overrides, so the add-to-cart and checkout
+   markup WooCommerce ships is untouched.
+   -------------------------------------------------------------------------- */
+
+:root {
+	--hb-velvet: linear-gradient(158deg, #2a2033 0%, #1c1624 48%, #16121c 100%);
+	--hb-velvet-line: rgba(255, 255, 255, .13);
+	--hb-velvet-text: #cfc7d9;
+	--hb-velvet-bright: #fdfbf8;
+	--hb-velvet-pink: #f0a9c8;
+}
+
+.single-product div.product .summary.entry-summary {
+	position: relative;
+	background: var(--hb-velvet);
+	border: 1px solid var(--hb-velvet-line);
+	border-radius: 14px;
+	padding: clamp(26px, 3vw, 38px);
+	color: var(--hb-velvet-text);
+	overflow: hidden;
+	box-shadow: 0 30px 60px -40px rgba(22, 18, 28, .8);
+}
+
+/* The same pink bloom the hero uses, tucked into the top corner. */
+.single-product div.product .summary.entry-summary::before {
+	content: "";
+	position: absolute;
+	width: 520px;
+	height: 520px;
+	right: -200px;
+	top: -240px;
+	border-radius: 50%;
+	background: radial-gradient(circle, rgba(178, 24, 92, .38), rgba(178, 24, 92, 0) 62%);
+	pointer-events: none;
+}
+
+.single-product div.product .summary.entry-summary > * { position: relative; }
+
+.single-product div.product .product_title {
+	color: var(--hb-velvet-bright);
+	letter-spacing: -0.025em;
+}
+
+.single-product div.product .summary p.price,
+.single-product div.product .summary span.price,
+.single-product div.product .summary .woocommerce-variation-price .price {
+	color: var(--hb-velvet-pink);
+	font-size: 1.5rem;
+}
+
+.single-product div.product .summary p.price del,
+.single-product div.product .summary span.price del { color: rgba(255, 255, 255, .4); }
+.single-product div.product .summary p.price ins { color: var(--hb-velvet-pink); text-decoration: none; }
+
+.single-product div.product .summary .woocommerce-product-details__short-description {
+	color: var(--hb-velvet-text);
+	border-top: 1px solid var(--hb-velvet-line);
+}
+
+.single-product div.product .summary .stock {
+	font-size: 0.82rem;
+	font-weight: 600;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--hb-velvet-pink);
+}
+
+/* Variation selects: dark fields, not the default white boxes. */
+.single-product div.product .summary .variations th,
+.single-product div.product .summary .variations label {
+	color: var(--hb-velvet-bright);
+	font-weight: 600;
+	font-size: 0.86rem;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.single-product div.product .summary .variations td { padding-bottom: 14px; }
+
+.single-product div.product .summary .variations select {
+	width: 100%;
+	background: rgba(255, 255, 255, .06);
+	border: 1px solid var(--hb-velvet-line);
+	border-radius: var(--hb-radius);
+	color: var(--hb-velvet-bright);
+	padding: 13px 14px;
+	font-family: var(--hb-sans);
+	font-size: 0.98rem;
+}
+
+.single-product div.product .summary .variations select option { color: #16121c; background: #fff; }
+
+.single-product div.product .summary .reset_variations {
+	color: var(--hb-velvet-pink);
+	font-size: 0.86rem;
+}
+
+.single-product div.product .summary .quantity input.qty {
+	background: rgba(255, 255, 255, .06);
+	border: 1px solid var(--hb-velvet-line);
+	color: var(--hb-velvet-bright);
+}
+
+.single-product div.product .summary form.cart .button.single_add_to_cart_button {
+	background: var(--hb-accent);
+	color: #fff;
+	border-color: transparent;
+}
+
+.single-product div.product .summary form.cart .button.single_add_to_cart_button:hover {
+	background: #c9256d;
+	color: #fff;
+}
+
+.single-product div.product .summary .product_meta {
+	color: rgba(255, 255, 255, .5);
+	border-top: 1px solid var(--hb-velvet-line);
+}
+
+.single-product div.product .summary a {
+	color: var(--hb-velvet-pink);
+	text-decoration: none;
+	border-bottom: 1px solid rgba(240, 169, 200, .35);
+}
+
+.single-product div.product .summary a:hover {
+	color: #fff;
+	border-bottom-color: #fff;
+}
+
+.single-product div.product .summary .button { border-bottom: 0; }
+
+/* Gallery: give it the same weight as the panel beside it. */
+.single-product .woocommerce-product-gallery img {
+	border-radius: 14px;
+	box-shadow: 0 26px 50px -34px rgba(22, 18, 28, .6);
+}
+
+.single-product .woocommerce-product-gallery .flex-control-thumbs { margin-top: 14px; gap: 10px; display: flex; }
+.single-product .woocommerce-product-gallery .flex-control-thumbs li { width: auto; flex: 0 0 76px; margin: 0; }
+.single-product .woocommerce-product-gallery .flex-control-thumbs img {
+	border-radius: 8px;
+	box-shadow: none;
+	opacity: .62;
+	transition: opacity .18s;
+}
+.single-product .woocommerce-product-gallery .flex-control-thumbs img:hover,
+.single-product .woocommerce-product-gallery .flex-control-thumbs img.flex-active { opacity: 1; }
 
 .related.products > h2,
 .up-sells > h2,

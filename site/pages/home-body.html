@@ -2,11 +2,15 @@
 <style>
 .bk{--ink:#16121c;--ink-2:#221b2a;--paper:#faf7f2;--white:#fff;--body:#544d5e;--muted:#847b90;--line:#ebe1d6;--accent:#b2185c;--accent-lo:#8d1247;--gold:#c9a961;--serif:'Playfair',Georgia,'Times New Roman',serif;--sans:'Reddit Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-family:var(--sans);color:var(--body);line-height:1.65;-webkit-font-smoothing:antialiased}
 .bk *,.bk *::before,.bk *::after{box-sizing:border-box}
+/* Break out of whatever content column the theme puts this in, so the section
+   backgrounds run edge to edge. Self-correcting: when the container is already
+   full width, 50% equals 50vw and both margins resolve to zero. */
+.bk{margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw)}
 .bk img{display:block;max-width:100%}
 .bk a{text-decoration:none}
 .bk h1,.bk h2,.bk h3{font-family:var(--serif);color:var(--ink);font-weight:600;letter-spacing:-.02em;margin:0}
 .bk p{margin:0}
-.bk-wrap{max-width:1200px;margin:0 auto;padding:0 28px}
+.bk-wrap{max-width:1240px;margin:0 auto;padding:0 clamp(20px,3.5vw,48px)}
 .bk-sec{padding:clamp(56px,7vw,104px) 0}
 .bk-kicker{font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
 .bk-lede{font-size:clamp(1rem,1.15vw,1.12rem);line-height:1.75;color:var(--body);max-width:52ch}
@@ -104,7 +108,6 @@
   .bk-fig-tall img{aspect-ratio:16/10}
 }
 @media (max-width:600px){
-  .bk-wrap{padding:0 20px}
   .bk-grid{grid-template-columns:1fr;gap:18px}
   .bk-opts{grid-template-columns:1fr}
   .bk-head{margin-bottom:24px}
@@ -155,7 +158,7 @@
         <p class="bk-kicker">The kits</p>
         <h2 class="bk-h2" style="margin-top:10px">New and popular</h2>
       </div>
-      <a class="bk-btn bk-btn--line" href="/shop">See all 57</a>
+      <a class="bk-btn bk-btn--line" href="/shop">See all kits</a>
     </div>
     <div class="bk-grid">
       <a class="bk-card" href="PRODUCT_11490">
