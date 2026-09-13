@@ -7,10 +7,11 @@ Source of truth for the site-wide work applied through the Bedazzle MCP tools.
 | File | Applied to |
 |---|---|
 | `design-system.css` | Appearance > Customize > Additional CSS (`custom_css` post **96**) |
-| `pages/home.html` | Page **11295**, the site front page |
+| `pages/home-body.html` | Page **11295**, the site front page (build with `tools/build_home.py`) |
 | `pages/about.html` | Page **11302** `/about` |
 | `pages/contact.html` | Page **11303** `/contact` |
-| `tools/spectra_responsive.py` | Build step for the page sources |
+| `tools/build_home.py` | Substitutes live image URLs and product links into the homepage |
+| `tools/spectra_responsive.py` | Build step for the Spectra-block page sources (about, contact) |
 | `backups/` | Previous values of everything that was overwritten |
 
 `../harleys_books_page.html` was the earlier front-page source; `pages/home.html`
@@ -53,3 +54,17 @@ overrides to maintain and nothing that can break checkout.
 
 Product statuses are also untouched: the importer leaves every kit as a draft
 for Harley to publish.
+
+## Why the homepage is not Spectra blocks
+
+The rest of the pages are Spectra blocks. The homepage is a single `wp:html`
+block with its own scoped stylesheet, because this environment cannot reach
+bedazzlekits.com: the only way to see the design before publishing is to render
+it locally in Chromium, and that requires owning every rule rather than relying
+on CSS that Spectra generates server-side at render time.
+
+    python3 site/tools/build_home.py --preview   # local stand-in images
+    python3 site/tools/build_home.py             # production
+
+Editing the homepage therefore means editing `pages/home-body.html`, not the
+block editor.

@@ -75,6 +75,15 @@ a:hover, a:focus { color: var(--hb-accent-dark); }
 .ast-container,
 .ast-container-fluid { max-width: 1160px; }
 
+/* Stretched / page-builder templates must stay edge to edge: the rule above
+   would otherwise cap full-bleed sections at the content width. */
+.ast-page-builder-template .ast-container,
+.ast-page-builder-template .ast-container-fluid {
+	max-width: 100%;
+	padding-left: 0;
+	padding-right: 0;
+}
+
 /* Page title band on inner pages */
 .ast-archive-description,
 .ast-single-entry-banner {

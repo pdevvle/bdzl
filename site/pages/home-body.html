@@ -1,0 +1,294 @@
+<div class="bk">
+<style>
+.bk{--ink:#16121c;--ink-2:#221b2a;--paper:#faf7f2;--white:#fff;--body:#544d5e;--muted:#847b90;--line:#ebe1d6;--accent:#b2185c;--accent-lo:#8d1247;--gold:#c9a961;--serif:'Playfair',Georgia,'Times New Roman',serif;--sans:'Reddit Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-family:var(--sans);color:var(--body);line-height:1.65;-webkit-font-smoothing:antialiased}
+.bk *,.bk *::before,.bk *::after{box-sizing:border-box}
+.bk img{display:block;max-width:100%}
+.bk a{text-decoration:none}
+.bk h1,.bk h2,.bk h3{font-family:var(--serif);color:var(--ink);font-weight:600;letter-spacing:-.02em;margin:0}
+.bk p{margin:0}
+.bk-wrap{max-width:1200px;margin:0 auto;padding:0 28px}
+.bk-sec{padding:clamp(56px,7vw,104px) 0}
+.bk-kicker{font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+.bk-lede{font-size:clamp(1rem,1.15vw,1.12rem);line-height:1.75;color:var(--body);max-width:52ch}
+.bk-h2{font-size:clamp(1.9rem,3.4vw,2.9rem);line-height:1.1}
+.bk-btn{display:inline-flex;align-items:center;justify-content:center;font-family:var(--sans);font-size:.98rem;font-weight:600;padding:15px 30px;border-radius:6px;border:1px solid transparent;transition:background-color .18s,color .18s,border-color .18s,transform .18s}
+.bk-btn:hover{transform:translateY(-1px)}
+.bk-btn--fill{background:var(--accent);color:#fff}
+.bk-btn--fill:hover{background:var(--accent-lo);color:#fff}
+.bk-btn--line{background:transparent;color:var(--ink);border-color:#d7cbbd}
+.bk-btn--line:hover{background:#f2ebe1;color:var(--ink)}
+.bk-btn--ghost{background:transparent;color:#f6f1ea;border-color:rgba(255,255,255,.28)}
+.bk-btn--ghost:hover{background:rgba(255,255,255,.09);color:#fff}
+.bk-btns{display:flex;flex-wrap:wrap;gap:12px}
+
+/* Hero */
+.bk-hero{position:relative;background:var(--ink);overflow:hidden}
+.bk-hero::before{content:"";position:absolute;width:900px;height:900px;right:-240px;top:-320px;border-radius:50%;background:radial-gradient(circle,rgba(178,24,92,.34),rgba(178,24,92,0) 62%);pointer-events:none}
+.bk-hero .bk-wrap{position:relative}
+.bk-hero-grid{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr);gap:clamp(32px,5vw,64px);align-items:center;padding:clamp(58px,7vw,100px) 0}
+.bk-hero h1{color:#fdfbf8;font-size:clamp(2.5rem,5.4vw,4.15rem);line-height:1.02;letter-spacing:-.035em}
+.bk-hero h1 em{font-style:italic;color:#f0a9c8}
+.bk-hero .bk-lede{color:#b9b0c4;margin-top:20px}
+.bk-hero .bk-kicker{color:#e79ec0}
+.bk-hero .bk-btns{margin-top:30px}
+.bk-hero-meta{margin-top:30px;padding-top:22px;border-top:1px solid rgba(255,255,255,.12);display:flex;flex-wrap:wrap;gap:8px 30px;font-size:.88rem;color:#948b9f}
+.bk-hero-meta b{color:#e6dff0;font-weight:600}
+/* offset image pair */
+.bk-stack{position:relative;padding-bottom:46px;padding-right:30px;max-width:460px;justify-self:end;width:100%}
+.bk-stack img{border-radius:12px}
+.bk-stack .a{width:100%;aspect-ratio:4/5;object-fit:cover;box-shadow:0 40px 70px -30px rgba(0,0,0,.75)}
+.bk-stack .b{position:absolute;right:0;bottom:0;width:44%;aspect-ratio:3/4;object-fit:cover;border:5px solid var(--ink);box-shadow:0 30px 50px -24px rgba(0,0,0,.8)}
+
+/* Series strip */
+.bk-strip{background:var(--ink-2);border-top:1px solid rgba(255,255,255,.08)}
+.bk-strip-in{display:flex;flex-wrap:wrap;justify-content:center;gap:10px 30px;padding:20px 0;font-size:.76rem;letter-spacing:.14em;text-transform:uppercase;color:#9c93a8}
+
+/* Product grid */
+.bk-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:34px}
+.bk-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:28px}
+.bk-card{display:flex;flex-direction:column;background:var(--white);border:1px solid var(--line);border-radius:12px;overflow:hidden;transition:transform .2s,box-shadow .2s,border-color .2s}
+.bk-card:hover{transform:translateY(-4px);border-color:#dccfbe;box-shadow:0 22px 40px -28px rgba(33,29,38,.55)}
+.bk-card-img{position:relative;background:#efe7dc}
+.bk-card-img img{width:100%;aspect-ratio:1/1;object-fit:cover}
+.bk-tag{position:absolute;left:14px;top:14px;background:rgba(22,18,28,.82);color:#fff;font-size:.66rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:6px 11px;border-radius:100px;backdrop-filter:blur(6px)}
+.bk-card-body{padding:20px 22px 24px;display:flex;flex-direction:column;gap:6px;flex:1}
+.bk-card h3{font-size:1.16rem;line-height:1.25}
+.bk-card p{font-size:.93rem;color:var(--muted)}
+.bk-card .bk-price{margin-top:auto;padding-top:14px;font-size:1rem;font-weight:600;color:var(--ink);font-family:var(--sans)}
+.bk-card .bk-price span{color:var(--accent)}
+
+/* Split feature */
+.bk-split{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:clamp(32px,5vw,72px);align-items:center}
+.bk-split img{width:100%;border-radius:12px}
+.bk-fig-tall img{aspect-ratio:1/1;object-fit:cover}
+.bk-fig-wide img{aspect-ratio:4/3;object-fit:cover}
+.bk-list{list-style:none;margin:26px 0 0;padding:0;display:grid;gap:14px;counter-reset:n}
+.bk-list li{counter-increment:n;display:grid;grid-template-columns:32px 1fr;gap:14px;align-items:baseline;font-size:1.06rem;color:var(--ink);padding-bottom:14px;border-bottom:1px solid var(--line)}
+.bk-list li::before{content:counter(n,decimal-leading-zero);font-family:var(--sans);font-size:.76rem;font-weight:700;letter-spacing:.06em;color:var(--accent);padding-top:3px}
+.bk-note{margin-top:22px;padding-top:20px;border-top:1px solid var(--line);font-size:.96rem;color:var(--muted);max-width:46ch}
+
+/* Dark sets band */
+.bk-dark{background:var(--ink);color:#c3bacd}
+.bk-dark h2{color:#fdfbf8}
+.bk-dark .bk-kicker{color:#e79ec0}
+.bk-sets{list-style:none;margin:26px 0 0;padding:0}
+.bk-sets li{display:flex;align-items:baseline;justify-content:space-between;gap:18px;padding:14px 0;border-bottom:1px solid rgba(255,255,255,.12);font-size:1.02rem;color:#e2dce9}
+.bk-sets li:first-child{border-top:1px solid rgba(255,255,255,.12)}
+.bk-sets b{font-weight:600;color:#fff;white-space:nowrap;font-size:.98rem}
+.bk-sets .dots{flex:1;border-bottom:1px dotted rgba(255,255,255,.22);transform:translateY(-4px)}
+
+/* Options row */
+.bk-opts{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.bk-opt{background:var(--white);border:1px solid var(--line);border-radius:12px;padding:30px 26px 26px;display:flex;flex-direction:column;gap:8px;min-height:190px;transition:transform .2s,box-shadow .2s,border-color .2s}
+.bk-opt:hover{transform:translateY(-3px);border-color:#dccfbe;box-shadow:0 18px 34px -26px rgba(33,29,38,.5)}
+.bk-opt h3{font-size:1.1rem}
+.bk-opt p{font-size:.92rem;color:var(--muted);flex:1}
+.bk-opt .bk-price{font-weight:600;color:var(--accent);font-size:.96rem;display:flex;align-items:center;gap:7px}
+.bk-opt .bk-price::after{content:"\2192";transition:transform .2s}
+.bk-opt:hover .bk-price::after{transform:translateX(4px)}
+
+/* Closing */
+.bk-close{background:var(--ink);text-align:center}
+.bk-close h2{color:#fdfbf8}
+.bk-close p{color:#b9b0c4;margin:16px auto 0;max-width:48ch}
+.bk-close .bk-btns{justify-content:center;margin-top:30px}
+.bk-close a.soc{color:#e79ec0;border-bottom:1px solid rgba(231,158,192,.4)}
+.bk-close a.soc:hover{color:#fff;border-color:#fff}
+
+@media (max-width:1000px){
+  .bk-hero-grid{grid-template-columns:1fr;padding-top:52px}
+  .bk-stack{order:-1;max-width:520px;padding-right:26px;padding-bottom:40px}
+  .bk-grid{grid-template-columns:repeat(2,1fr);gap:22px}
+  .bk-split{grid-template-columns:1fr;gap:34px}
+  .bk-opts{grid-template-columns:repeat(2,1fr)}
+  .bk-fig-tall img{aspect-ratio:16/10}
+}
+@media (max-width:600px){
+  .bk-wrap{padding:0 20px}
+  .bk-grid{grid-template-columns:1fr;gap:18px}
+  .bk-opts{grid-template-columns:1fr}
+  .bk-head{margin-bottom:24px}
+  .bk-btn{flex:1 1 auto}
+  .bk-sets li{flex-wrap:wrap;gap:2px}
+  .bk-sets .dots{display:none}
+}
+@media (prefers-reduced-motion:reduce){.bk *{transition:none!important}}
+</style>
+
+<section class="bk-hero">
+  <div class="bk-wrap">
+    <div class="bk-hero-grid">
+      <div>
+        <p class="bk-kicker">Book bedazzle kits</p>
+        <h1>Every gem, counted for <em>one</em> book.</h1>
+        <p class="bk-lede">Kits for ACOTAR, Throne of Glass, Fourth Wing, Red Rising and fifty more. Gems measured against a cover Harley has already done, plus the tools, glue and a card of tips.</p>
+        <div class="bk-btns">
+          <a class="bk-btn bk-btn--fill" href="/shop">Shop all kits</a>
+          <a class="bk-btn bk-btn--ghost" href="PRODUCT_11431">Custom kit</a>
+        </div>
+        <div class="bk-hero-meta">
+          <span><b>57</b> kits</span>
+          <span><b>$13</b> to <b>$233</b></span>
+          <span>Pre-orders ship in <b>2 to 4 weeks</b></span>
+        </div>
+      </div>
+      <div class="bk-stack">
+        <img class="a" src="IMG_ONYX" alt="Onyx Storm hardcover covered in rhinestones">
+        <img class="b" src="IMG_TOG" alt="A bedazzled Throne of Glass cover">
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="bk-strip">
+  <div class="bk-wrap">
+    <div class="bk-strip-in">
+      <span>ACOTAR</span><span>Throne of Glass</span><span>Fourth Wing</span><span>Onyx Storm</span><span>Red Rising</span><span>Dungeon Crawler Carl</span><span>Caraval</span><span>Hunger Games</span>
+    </div>
+  </div>
+</div>
+
+<section class="bk-sec" style="background:var(--paper)">
+  <div class="bk-wrap">
+    <div class="bk-head">
+      <div>
+        <p class="bk-kicker">The kits</p>
+        <h2 class="bk-h2" style="margin-top:10px">New and popular</h2>
+      </div>
+      <a class="bk-btn bk-btn--line" href="/shop">See all 57</a>
+    </div>
+    <div class="bk-grid">
+      <a class="bk-card" href="PRODUCT_11490">
+        <div class="bk-card-img"><img src="IMG_ONYX" alt="Onyx Storm bedazzle kit"><span class="bk-tag">Pre-order</span></div>
+        <div class="bk-card-body">
+          <h3>Onyx Storm</h3>
+          <p>Hardcover. Small gems for the clouds and the lettering.</p>
+          <p class="bk-price">$37</p>
+        </div>
+      </a>
+      <a class="bk-card" href="PRODUCT_11575">
+        <div class="bk-card-img"><img src="IMG_FW" alt="Fourth Wing hardcover bedazzle kit"><span class="bk-tag">Pre-order</span></div>
+        <div class="bk-card-body">
+          <h3>Fourth Wing</h3>
+          <p>Hardcover, in all gold and black gems.</p>
+          <p class="bk-price">$37</p>
+        </div>
+      </a>
+      <a class="bk-card" href="PRODUCT_11387">
+        <div class="bk-card-img"><img src="IMG_DCC" alt="Dungeon Crawler Carl bedazzle kit"><span class="bk-tag">Pre-order</span></div>
+        <div class="bk-card-body">
+          <h3>Dungeon Crawler Carl</h3>
+          <p>The same gems Harley used on this cover.</p>
+          <p class="bk-price">$35</p>
+        </div>
+      </a>
+      <a class="bk-card" href="PRODUCT_11567">
+        <div class="bk-card-img"><img src="IMG_TOG" alt="Throne of Glass hardcover set"><span class="bk-tag">Full set</span></div>
+        <div class="bk-card-body">
+          <h3>Throne of Glass, all eight</h3>
+          <p>Hardcovers. One tool kit, supplies for every book after.</p>
+          <p class="bk-price">$233 <span>· save on eight</span></p>
+        </div>
+      </a>
+      <a class="bk-card" href="PRODUCT_11414">
+        <div class="bk-card-img"><img src="IMG_ACOTAR" alt="ACOTAR all five bedazzle kits"><span class="bk-tag">Full set</span></div>
+        <div class="bk-card-body">
+          <h3>ACOTAR, all five</h3>
+          <p>Standard paperbacks, done as one matching run.</p>
+          <p class="bk-price">$147 <span>· save on five</span></p>
+        </div>
+      </a>
+      <a class="bk-card" href="PRODUCT_11560">
+        <div class="bk-card-img"><img src="IMG_RR" alt="Red Rising series bedazzle kits"><span class="bk-tag">Full set</span></div>
+        <div class="bk-card-body">
+          <h3>Red Rising, all six</h3>
+          <p>The whole saga, colours carried across the run.</p>
+          <p class="bk-price">$175 <span>· save on six</span></p>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section class="bk-sec" style="background:var(--white)">
+  <div class="bk-wrap">
+    <div class="bk-split">
+      <figure class="bk-fig-tall" style="margin:0"><img src="IMG_KIT" alt="Gems, trays, tools and supplies laid out from a kit"></figure>
+      <div>
+        <p class="bk-kicker">What arrives</p>
+        <h2 class="bk-h2" style="margin-top:10px">Open the box and start.</h2>
+        <ol class="bk-list">
+          <li>Gems in the exact colours and sizes used on that cover</li>
+          <li>Tools and gem trays for sorting and placing</li>
+          <li>Glue, wax and a sealer</li>
+          <li>A card of tips and tricks for bedazzling your book</li>
+        </ol>
+        <p class="bk-note">Gem amounts are measured from books Harley has bedazzled herself, then weighed, so the count that arrives is the count the cover needs.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="bk-sec bk-dark">
+  <div class="bk-wrap">
+    <div class="bk-split">
+      <div>
+        <p class="bk-kicker">Series sets</p>
+        <h2 class="bk-h2" style="margin-top:10px">Do the whole shelf.</h2>
+        <p class="bk-lede" style="color:#b9b0c4;margin-top:18px">Sets ship with one main set of tools, then glue, wax and sealer for each book after it. Cheaper than buying the kits one at a time, and the colours carry across the run.</p>
+        <ul class="bk-sets">
+          <li><span>ACOTAR, five paperbacks</span><span class="dots"></span><b>$147</b></li>
+          <li><span>ACOTAR, five B&amp;N editions</span><span class="dots"></span><b>$147</b></li>
+          <li><span>Throne of Glass, eight hardcovers</span><span class="dots"></span><b>$233</b></li>
+          <li><span>Red Rising, six books</span><span class="dots"></span><b>$175</b></li>
+          <li><span>Dungeon Crawler Carl spines, full set</span><span class="dots"></span><b>$98</b></li>
+        </ul>
+        <div class="bk-btns" style="margin-top:30px"><a class="bk-btn bk-btn--fill" href="/shop">Browse the sets</a></div>
+      </div>
+      <figure class="bk-fig-wide" style="margin:0"><img src="IMG_RRWIDE" alt="The Red Rising series bedazzled and lined up"></figure>
+    </div>
+  </div>
+</section>
+
+<section class="bk-sec" style="background:var(--paper)">
+  <div class="bk-wrap">
+    <div class="bk-head">
+      <div>
+        <p class="bk-kicker">Ways to buy</p>
+        <h2 class="bk-h2" style="margin-top:10px">However far in you are.</h2>
+      </div>
+    </div>
+    <div class="bk-opts">
+      <a class="bk-opt" href="/shop"><h3>Full kit</h3><p>Gems, tools and supplies for one cover.</p><span class="bk-price">From $35</span></a>
+      <a class="bk-opt" href="PRODUCT_11506"><h3>Spine only</h3><p>Just the spine, with or without the tools.</p><span class="bk-price">From $13</span></a>
+      <a class="bk-opt" href="PRODUCT_11590"><h3>Gems only</h3><p>For repeat bedazzlers who kept their tools.</p><span class="bk-price">$27</span></a>
+      <a class="bk-opt" href="PRODUCT_11431"><h3>Custom</h3><p>Any book. Message first with a photo of the cover.</p><span class="bk-price">$37</span></a>
+    </div>
+  </div>
+</section>
+
+<section class="bk-sec" style="background:var(--white)">
+  <div class="bk-wrap">
+    <div class="bk-split">
+      <div>
+        <p class="bk-kicker">Custom kits</p>
+        <h2 class="bk-h2" style="margin-top:10px">Any book, made to match.</h2>
+        <p class="bk-lede" style="margin-top:18px">Send the book you want and a photo of the cover. Harley builds the kit around it: the right gem count, colours that match, plus tools, trays, wax, glue and sealer. Message before ordering so the quote is right.</p>
+        <div class="bk-btns" style="margin-top:28px"><a class="bk-btn bk-btn--fill" href="PRODUCT_11431">Start a custom kit</a></div>
+      </div>
+      <figure class="bk-fig-wide" style="margin:0"><img src="IMG_CUSTOM" alt="A custom bedazzled book cover"></figure>
+    </div>
+  </div>
+</section>
+
+<section class="bk-sec bk-close">
+  <div class="bk-wrap">
+    <h2 class="bk-h2">Pick a title. Start bedazzling.</h2>
+    <p>Works in progress, finished covers and how-to videos go up on Instagram <a class="soc" href="https://www.instagram.com/harleysbooks" target="_blank" rel="noopener">@Harleysbooks</a> and TikTok <a class="soc" href="https://www.tiktok.com/@harleysbooktok" target="_blank" rel="noopener">@harleysbooktok</a>.</p>
+    <div class="bk-btns">
+      <a class="bk-btn bk-btn--fill" href="/shop">Shop all kits</a>
+      <a class="bk-btn bk-btn--ghost" href="https://www.etsy.com/shop/HarleysBooks" target="_blank" rel="noopener">Etsy shop</a>
+    </div>
+  </div>
+</section>
+</div>
