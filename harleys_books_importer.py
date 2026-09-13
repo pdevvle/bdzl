@@ -532,6 +532,105 @@ class EtsyClient(_HttpClient):
 # --------------------------------------------------------------------------
 
 
+def _variants(listing_id, inventory):
+    """Pull the attribute set and variant list out of an Etsy inventory payload.
+
+    An Etsy inventory "product" is one combination of property values carrying
+    its own offering; that maps onto a WooCommerce variation, and the distinct
+    property values map onto attributes. Only enabled, priced offerings become
+    variants — an attribute must never offer a choice that cannot be bought.
+    """
+    attributes = {}
+    order = []
+    variants = []
+    property_names = []
+    offering_count = 0
+    disabled_count = 0
+    min_price = None
+
+    for product in (inventory or {}).get("products") or []:
+        values = {}
+        for prop in product.get("property_values") or []:
+            name = (prop.get("property_name") or "").strip()
+            raw = prop.get("values") or []
+            value = (str(raw[0]).strip() if raw else "")
+            if not name or not value:
+                continue
+            values[name] = value
+            if name not in property_names:
+                property_names.append(name)
+
+        offerings = product.get("offerings") or []
+        if offerings:
+            offering_count += 1
+
+        for offering in offerings:
+            if not offering.get("is_enabled", True):
+                disabled_count += 1
+                continue
+            price, _ = _money(offering.get("price"))
+            if price is None:
+                continue
+
+            if min_price is None or price < min_price:
+                min_price = price
+
+            # A variant describes a choice. An offering with no property values
+            # is not one — it is just the listing's own price, and recording it
+            # as a variant would model an empty selection.
+            if not values:
+                break
+
+            variants.append(
+                {
+                    # Stable and unique: the Etsy inventory product id does not
+                    # change for a combination, so re-runs update the same
+                    # variation instead of churning them.
+                    "sku": "%s%d-%d"
+                    % (SKU_PREFIX, listing_id,
+                       int(product.get("product_id") or (len(variants) + 1))),
+                    "attributes": values,
+                    "price": "%.2f" % price,
+                    "quantity": int(offering.get("quantity") or 0),
+                }
+            )
+            for name, value in values.items():
+                if name not in attributes:
+                    attributes[name] = []
+                    order.append(name)
+                if value not in attributes[name]:
+                    attributes[name].append(value)
+
+            # Etsy carries one offering per inventory product in practice.
+            break
+
+    attribute_list = [
+        {"name": name, "options": attributes[name]} for name in order if attributes[name]
+    ]
+
+    return {
+        "attributes": attribute_list,
+        "variants": variants,
+        "property_names": property_names,
+        "offering_count": offering_count,
+        "disabled_count": disabled_count,
+        "min_price": min_price,
+    }
+
+
+def _variant_signature(item):
+    """Fingerprint of a variant set, so a sync can report that it changed."""
+    parts = []
+    for variant in item.get("variants") or []:
+        values = variant["attributes"]
+        joined = ",".join(values[k] for k in sorted(values))
+        parts.append(
+            "%s|%s|%s|%s" % (variant["sku"], joined, variant["price"], variant["quantity"])
+        )
+    parts.sort()
+    return hashlib.sha1(";".join(parts).encode("utf-8")).hexdigest()
+
+
 def _normalize_listing(listing, images, inventory, sections):
     """Map a raw Etsy v3 listing into the neutral catalog schema.
 
@@ -543,56 +642,45 @@ def _normalize_listing(listing, images, inventory, sections):
 
     price, currency = _money(listing.get("price"))
 
-    # Fall back to the cheapest enabled offering when the listing-level price
-    # is absent (happens on some price-on-property listings).
-    offerings = []
-    property_names = []
-    if inventory:
-        for product in inventory.get("products") or []:
-            for value in product.get("property_values") or []:
-                name = value.get("property_name")
-                if name and name not in property_names:
-                    property_names.append(name)
-            for offering in product.get("offerings") or []:
-                offer_price, offer_currency = _money(offering.get("price"))
-                if offer_price is None:
-                    continue
-                offerings.append(
-                    {
-                        "price": offer_price,
-                        "currency": offer_currency,
-                        "quantity": offering.get("quantity") or 0,
-                        "enabled": bool(offering.get("is_enabled", True)),
-                    }
-                )
-    if price is None and offerings:
-        enabled = [o for o in offerings if o["enabled"]] or offerings
-        cheapest = min(enabled, key=lambda o: o["price"])
-        price = cheapest["price"]
-        currency = currency or cheapest["currency"]
+    parsed = _variants(listing_id, inventory)
+    variants = parsed["variants"]
+    attributes = parsed["attributes"]
 
-    # Variation detection. The catalog is deliberately mirrored 1:1, so a
-    # listing with real variations still becomes a simple product — it is
-    # flagged REVIEW so consolidation can happen later, deliberately.
-    distinct_offerings = len(
-        [p for p in (inventory or {}).get("products") or [] if p.get("offerings")]
-    )
-    has_real_variations = bool(property_names) and distinct_offerings > 1
+    # A listing is variable when there is a real choice to make: more than one
+    # buyable combination, described by at least one attribute.
+    is_variable = len(variants) > 1 and bool(attributes)
+
+    # Without a listing-level price, fall back to the cheapest buyable
+    # offering. For a variable listing this only seeds the parent; each
+    # variation carries its own price.
+    if price is None and parsed["min_price"] is not None:
+        price = parsed["min_price"]
+
     price_on_property = list((inventory or {}).get("price_on_property") or [])
     quantity_on_property = list((inventory or {}).get("quantity_on_property") or [])
 
+    # Review is reserved for what cannot be represented faithfully. Having
+    # variations is no longer one of those things — they are imported as
+    # WooCommerce variations.
     review_reasons = []
-    if has_real_variations:
-        review_reasons.append(
-            "listing has %d offerings across %s"
-            % (distinct_offerings, ", ".join(property_names))
-        )
-    if price_on_property:
-        review_reasons.append("price varies by property")
-    if quantity_on_property:
-        review_reasons.append("quantity varies by property")
-    if price is None:
+    if price is None and not is_variable:
         review_reasons.append("no price could be resolved")
+    # Not "no variants": a simple listing legitimately has none. The real fault
+    # is offerings existing but none of them being buyable.
+    if parsed["offering_count"] > 0 and parsed["min_price"] is None:
+        review_reasons.append("listing has offerings but none are enabled or priced")
+    if is_variable:
+        # Every variant must name a value for every attribute, or a storefront
+        # selection cannot resolve to a variation.
+        for variant in variants:
+            missing = [
+                a["name"] for a in attributes if a["name"] not in variant["attributes"]
+            ]
+            if missing:
+                review_reasons.append(
+                    'a variation is missing a value for "%s"' % missing[0]
+                )
+                break
 
     # Images. rank 1 is the Etsy primary image and becomes the Woo thumbnail.
     normalized_images = []
@@ -654,10 +742,13 @@ def _normalize_listing(listing, images, inventory, sections):
         "weight": weight,
         "dimensions": dimensions,
         "images": normalized_images,
-        "variations": {
-            "has_variations": bool(listing.get("has_variations")) or has_real_variations,
-            "offering_count": distinct_offerings,
-            "property_names": property_names,
+        "is_variable": is_variable,
+        "attributes": attributes,
+        "variants": variants,
+        "variation_meta": {
+            "offering_count": parsed["offering_count"],
+            "disabled_count": parsed["disabled_count"],
+            "property_names": parsed["property_names"],
             "price_on_property": price_on_property,
             "quantity_on_property": quantity_on_property,
         },
@@ -1098,12 +1189,28 @@ def cmd_push(args):
     client = WooClient(store_url, consumer_key, consumer_secret)
 
     created = updated = unchanged_images = failed = skipped_type = 0
+    skipped_variable = 0
     seen_ids = set()
 
     for index, item in enumerate(items, start=1):
         sku = item["sku"]
         label = item["title"][:60]
         prefix = "[%d/%d] %s" % (index, len(items), sku)
+
+        # Variable listings are not supported by this CLI's push. Creating them
+        # as simple products would price every one at its cheapest offering and
+        # give the customer no way to choose — the live catalogue is almost
+        # entirely variable, so this refuses rather than quietly mispricing.
+        # Use the WordPress plugin, which builds real variations.
+        if item.get("is_variable"):
+            _warn(
+                "%s has %d variation(s) and this importer only pushes simple "
+                "products — skipping rather than importing it at the wrong "
+                "price. Use the WordPress plugin for variable listings."
+                % (sku, len(item.get("variants") or []))
+            )
+            skipped_variable += 1
+            continue
 
         if not item.get("price"):
             _warn("%s has no price — skipping. %s" % (sku, label))
@@ -1188,6 +1295,11 @@ def cmd_push(args):
         "Done. created=%d updated=%d failed=%d (images unchanged on %d update(s))"
         % (created, updated, failed, unchanged_images)
     )
+    if skipped_variable:
+        _log(
+            "  %d item(s) skipped: variable listings, which this CLI cannot push. "
+            "Use the WordPress plugin for those." % skipped_variable
+        )
     if skipped_type:
         _log(
             "  %d item(s) skipped: the store product is not simple. Nothing was "
@@ -1206,6 +1318,7 @@ def cmd_push(args):
         "updated": updated,
         "failed": failed,
         "skipped_not_simple": skipped_type,
+        "skipped_variable": skipped_variable,
         "skipped_review": skipped_review,
         "images_unchanged": unchanged_images,
         "drafted_missing": drafted,

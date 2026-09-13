@@ -29,8 +29,9 @@ class BDZ_Etsy_Job {
 	/** Listings normalized per tick. Cheap: two API calls each. */
 	const INVENTORY_BATCH = 6;
 
-	/** Products imported per tick. Small: image sideloading dominates. */
-	const PUSH_BATCH = 3;
+	/** Products imported per tick. Small: image sideloading dominates, and a
+	 * variable product writes a row per variation on top of that. */
+	const PUSH_BATCH = 2;
 
 	private $state;
 
@@ -53,11 +54,12 @@ class BDZ_Etsy_Job {
 			'sections'  => array(),
 			'listings'  => array(),
 			'stats'     => array(
-				'created' => 0,
-				'updated' => 0,
-				'skipped' => 0,
-				'failed'  => 0,
-				'review'  => 0,
+				'created'  => 0,
+				'updated'  => 0,
+				'skipped'  => 0,
+				'failed'   => 0,
+				'review'   => 0,
+				'variable' => 0,
 			),
 		);
 	}
@@ -219,6 +221,10 @@ class BDZ_Etsy_Job {
 
 			$item      = BDZ_Etsy_Normalize::listing( $listing, $images, $inventory, $sections );
 			$catalog[] = $item;
+
+			if ( ! empty( $item['is_variable'] ) ) {
+				$this->state['stats']['variable']++;
+			}
 
 			if ( $item['review'] ) {
 				$this->state['stats']['review']++;
@@ -399,6 +405,16 @@ class BDZ_Etsy_Job {
 
 			if ( BDZ_Etsy_Normalize::image_signature( $old ) !== BDZ_Etsy_Normalize::image_signature( $item ) ) {
 				$changes[] = sprintf( 'images: %d -> %d', count( $old['images'] ), count( $item['images'] ) );
+			}
+
+			// Variation prices and stock move independently of the parent, so
+			// compare the whole set or those changes go unreported.
+			if ( BDZ_Etsy_Normalize::variant_signature( $old ) !== BDZ_Etsy_Normalize::variant_signature( $item ) ) {
+				$changes[] = sprintf(
+					'variations: %d -> %d (prices or stock changed)',
+					count( isset( $old['variants'] ) ? $old['variants'] : array() ),
+					count( isset( $item['variants'] ) ? $item['variants'] : array() )
+				);
 			}
 
 			if ( $changes ) {

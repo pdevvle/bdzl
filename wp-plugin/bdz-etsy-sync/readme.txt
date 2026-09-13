@@ -48,15 +48,22 @@ place instead of creating a second copy of everything.
   sticks.
 * Listings withdrawn from Etsy have their product set to **draft, never
   deleted**. Pulling something from sale is reversible.
-* A store product that is **not simple is skipped**, never flattened. Importing
-  a simple product over a variable one would orphan its variations and the
-  pricing that lives on them.
+* A product this plugin **did not create is never converted** between simple
+  and variable; it is skipped. A listing that gains or loses its Etsy options
+  does convert its own product, because Etsy is the source of truth.
 * Images are re-imported **only when the Etsy image set actually changed**,
   tracked by a signature. Without that, every run would re-download the whole
   gallery.
-* Listings with real variations, or with price/quantity varying by property, or
-  with no images, are **flagged for review** and imported as simple products at
-  the cheapest enabled offering price.
+* Listings with Etsy variations become **WooCommerce variable products**. Each
+  Etsy property (Book, Amount of Gems, Tools) becomes an attribute, and each
+  buyable combination becomes a variation carrying its own price and stock.
+  Disabled or unpriced offerings are left out, so the storefront never offers a
+  choice that cannot be bought.
+* Variations are the one thing that is ever deleted, and only this plugin's
+  own: a combination Etsy no longer offers must stop being buyable. Deletion is
+  scoped by SKU to the listing's own variations.
+* **Review** is reserved for what cannot be represented faithfully — no price,
+  no images, or offerings that exist but are all disabled.
 
 == Running time ==
 
