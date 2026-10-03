@@ -54,11 +54,14 @@ from `core/image`, which is why image crops are CSS classes (`hb-tile`,
 - Single product pages given a velvet summary panel: the `.summary` block picks
   up the homepage gradient and pink bloom, with the variation selects, quantity
   field and meta restyled for a dark surface. CSS only — see "Not touched".
-- Nine products published so every homepage link resolves: 11490, 11575, 11387,
-  11567, 11414, 11560 (featured grid), 11506, 11590, 11431 (ways to buy). The
-  other 50 are still drafts. The "See all 57" button was relabelled "See all
-  kits" to stop promising a catalogue the shop does not yet list; the hero's
-  "57 kits" line should be revisited if the rest stay unpublished.
+- All 59 imported products published; nothing is left in draft. Only
+  `post_status` changed — names, prices, descriptions, images, variations and
+  categories are exactly as the importer left them.
+- Hero count changed from "57 kits" to "50+ kits" and the grid button from
+  "See all 57" to "See all kits". The catalogue is 59 listings, one of which
+  (11600, Bedazzling Glue Upgrade) is an add-on rather than a kit, so a fixed
+  number was both wrong and brittle as Harley adds listings.
+- Footer credit replaced. See `../wp-plugin/bdz-site-footer/`.
 
 ## Not touched
 
