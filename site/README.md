@@ -62,6 +62,47 @@ from `core/image`, which is why image crops are CSS classes (`hb-tile`,
   (11600, Bedazzling Glue Upgrade) is an add-on rather than a kit, so a fixed
   number was both wrong and brittle as Harley adds listings.
 - Footer credit replaced. See `../wp-plugin/bdz-site-footer/`.
+- Single product page: fixed the overlapping columns, and moved the price
+  above the short description. See "The single product page" below.
+
+## The single product page
+
+Three Astra Pro settings interact badly here, and the symptom is the gallery
+and the velvet summary panel sitting on top of the tabs and the related
+products:
+
+| setting | value |
+| --- | --- |
+| `single-product-gallery-layout` | `vertical-slider` |
+| `single-product-tabs-layout` | `vertical` |
+| `single-product-sticky-product-image` | `true` |
+| `single-product-sticky-summary` | `true` |
+
+`sticky-product-image.js` builds a wrapper around the gallery and the summary
+and hard-sets `wrapper.style.height` **in pixels** from `summary.scrollHeight`,
+measured once at `DOMContentLoaded` and refreshed only on `resize`. Every kit
+is a variable product, so the summary grows when a shopper picks a variation
+and WooCommerce reveals `.single_variation_wrap` — and the webfonts land after
+the measurement too. The frozen height is always short, so the columns spill
+out of the wrapper and over whatever follows.
+
+Separately, `single-product-sticky-summary` turns `div.product` into
+`display: flex`, which makes the tabs and the related products flex items that
+shrink instead of spanning the row.
+
+Both are corrected in `design-system.css` (search "layout corrections"); the
+comments there carry the detail. The fix is CSS only — the premium plugin's JS
+is left alone so Astra Pro updates do not clobber it.
+
+Turning either sticky setting off in the customizer would also resolve it, and
+is worth considering if these rules ever start fighting an Astra Pro update.
+
+One of the overlapping rules was mine: an earlier revision styled the
+flexslider `.flex-control-thumbs` nav as a horizontal strip. This layout does
+not use that nav at all — Astra Pro's `templates/single-product-gallery.php`
+replaces it with `#ast-gallery-thumbnails` — and Astra sizes
+`.flex-control-thumbs` as a `calc(25% - 1em)` column, so forcing
+`display: flex` on it sent the thumbnails across the main image.
 
 ## Not touched
 

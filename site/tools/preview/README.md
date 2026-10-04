@@ -29,3 +29,16 @@ Two traps worth remembering, both of which produced false alarms before:
   and scroll the page first, or sections near the bottom capture blank.
 - Mock chrome is not the page. A header or nav written only for the harness
   can overflow on its own and look like a bug in the real layout.
+- A mock is only worth what its fidelity is worth. The first product-page mock
+  guessed at the markup and missed the real bug entirely; the current one has
+  every structural rule traced back to the installed Astra 4.13.11 and Astra
+  Pro 4.13.9, with the source cited in the comments. When the mock disagrees
+  with the live page, fix the mock before touching the CSS — twice now an
+  apparent bug was the harness missing a rule the real page has.
+
+To read the installed plugin source, `bdz_plugin_read_file` returns whole
+files; large ones are written to a tool-results file that can then be grepped.
+Astra itself is not readable that way (`bdz_theme_read_file` is scoped to the
+child theme, which is not the active theme), so download the matching version
+from wordpress.org instead — `theme-auto-version` in `astra-settings` says
+which.

@@ -694,22 +694,125 @@ label,
 
 .single-product div.product .summary .button { border-bottom: 0; }
 
-/* Gallery: give it the same weight as the panel beside it. */
-.single-product .woocommerce-product-gallery img {
+/* --------------------------------------------------------------------------
+   Single product — layout corrections
+
+   This store runs Astra Pro with single-product-gallery-layout =
+   vertical-slider, single-product-tabs-layout = vertical, and BOTH
+   single-product-sticky-product-image and single-product-sticky-summary on.
+   Those three combine into a layout the stock rules do not survive; the fixes
+   below are the minimum needed to keep the columns from overlapping.
+   -------------------------------------------------------------------------- */
+
+/* sticky-product-image.js moves the gallery and the summary into a wrapper it
+   creates, then hard-sets that wrapper's height in PIXELS from the summary's
+   scrollHeight — measured once at DOMContentLoaded and refreshed only on
+   resize. Every product here is a variable product, so the summary grows when
+   a variation is picked (WooCommerce reveals .single_variation_wrap), and the
+   webfonts land after the measurement too. The frozen height is therefore
+   always short, and the columns spill out of the wrapper and over the tabs
+   and related products below it.
+
+   Letting the wrapper size to its own content removes the overlap. It also
+   has to be laid out as the flex row sticky-summary expects, because the JS
+   wrapper replaces the float context those two columns were relying on. */
+.ast-product-img-summary-wrapper.ast-is-sticky-product-image {
+	height: auto !important;
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	flex-wrap: wrap;
+}
+
+.ast-product-img-summary-wrapper.ast-is-sticky-product-image > .woocommerce-product-gallery,
+.ast-product-img-summary-wrapper.ast-is-sticky-product-image > .summary {
+	float: none;
+	margin-top: 0;
+}
+
+/* sticky-summary turns div.product itself into a flex row, which makes the
+   tabs and the related products flex items that shrink to fit instead of
+   spanning the row. */
+.ast-sticky-row > .woocommerce-tabs,
+.ast-sticky-row > .related.products,
+.ast-sticky-row > .up-sells,
+.ast-sticky-row > .ast-product-img-summary-wrapper {
+	flex: 0 0 100%;
+	width: 100%;
+}
+
+/* Astra emits `position: sticky` for the summary with no offset, which is
+   inert. Give both columns a real one so they actually pin. */
+.ast-sticky-row .summary,
+.ast-is-sticky-product-image > .woocommerce-product-gallery {
+	top: 24px;
+}
+
+/* Below the stacking breakpoint the two columns must not stay side by side —
+   at phone width a 47/49 split leaves the summary a couple of words wide.
+   sticky-product-image.js already sets the wrapper to height:auto and the
+   gallery to position:static here; this stands the flex row down to match.
+   Astra's generated CSS may well do the same, in which case this is a no-op,
+   but that CSS is built at runtime and cannot be checked from the repo.
+
+   The column widths need !important: Astra generates them from
+   single-product-image-width through a selector list that includes
+   `.woocommerce-page #content ... div.summary`, and an ID beats anything
+   specificity alone can answer with here. */
+@media (max-width: 768px) {
+	.ast-product-img-summary-wrapper.ast-is-sticky-product-image { display: block; }
+
+	.ast-product-img-summary-wrapper.ast-is-sticky-product-image > div.images,
+	.ast-product-img-summary-wrapper.ast-is-sticky-product-image > div.summary {
+		float: none !important;
+		width: 100% !important;
+		margin-left: 0;
+		margin-right: 0;
+	}
+
+	.ast-sticky-row > .woocommerce-tabs ul.tabs,
+	.ast-sticky-row > .woocommerce-tabs .panel { width: 100%; }
+
+	.single-product div.product .summary.entry-summary { margin-top: 24px; }
+}
+
+/* Breathing room between the buy area and the tabs. Without it the first tab
+   sits hard against the summary panel's lower edge. */
+.single-product div.product .woocommerce-tabs { margin-top: clamp(32px, 4vw, 56px); }
+
+/* Gallery: weight on the main image only. The thumbnails are a narrow
+   absolutely-positioned column (Astra Pro's #ast-gallery-thumbnails), not a
+   strip under the image — an earlier revision styled the flexslider
+   .flex-control-thumbs nav as a horizontal row, which this layout does not
+   use, and that row overflowed its 25%-wide column straight across the main
+   image. */
+.single-product .woocommerce-product-gallery > .flex-viewport img,
+.single-product .woocommerce-product-gallery > .woocommerce-product-gallery__wrapper img {
 	border-radius: 14px;
 	box-shadow: 0 26px 50px -34px rgba(22, 18, 28, .6);
 }
 
-.single-product .woocommerce-product-gallery .flex-control-thumbs { margin-top: 14px; gap: 10px; display: flex; }
-.single-product .woocommerce-product-gallery .flex-control-thumbs li { width: auto; flex: 0 0 76px; margin: 0; }
-.single-product .woocommerce-product-gallery .flex-control-thumbs img {
+.single-product #ast-gallery-thumbnails .ast-woocommerce-product-gallery__image img,
+.single-product .ast-single-product-thumbnails .ast-woocommerce-product-gallery__image img {
 	border-radius: 8px;
-	box-shadow: none;
-	opacity: .62;
+	opacity: .72;
 	transition: opacity .18s;
 }
-.single-product .woocommerce-product-gallery .flex-control-thumbs img:hover,
-.single-product .woocommerce-product-gallery .flex-control-thumbs img.flex-active { opacity: 1; }
+
+.single-product .ast-woocommerce-product-gallery__image:hover img,
+.single-product .ast-woocommerce-product-gallery__image.flex-active-slide img { opacity: 1; }
+
+/* Astra draws the gallery's prev/next arrows itself — a 30px circle with a
+   CSS chevron — but they are bare <button> elements, so the global button
+   rule above catches them. Its `border-radius: ... !important` was squaring
+   the circles off. Put the radius back and leave Astra's colours alone. */
+.ast-vertical-navigation-wrapper button,
+#ast-vertical-navigation-prev,
+#ast-vertical-navigation-next,
+.woocommerce-product-gallery .flex-direction-nav a {
+	border-radius: 100% !important;
+	border: 0;
+}
 
 .related.products > h2,
 .up-sells > h2,
