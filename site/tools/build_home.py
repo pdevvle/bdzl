@@ -12,6 +12,8 @@ UPLOADS = "https://bedazzlekits.com/wp-content/uploads/2026/09/"
 IMAGES = {
     "IMG_ONYX":   "il_fullxfull.6628848322_659h.jpg",      # 11495 Onyx Storm
     "IMG_TOG":    "il_fullxfull.8340035680_etlc.jpg",      # 11572 Throne of Glass set
+    "IMG_TOGB":   "il_fullxfull.7750064596_hni6-1-scaled.jpg",  # 11573 ToG set, second shot
+    "IMG_TOGC":   "il_fullxfull.7750064600_hrwk-1-scaled.jpg",  # 11574 ToG set, detail
     "IMG_ACOTAR": "il_fullxfull.6846470854_exom.jpg",      # 11421 ACOTAR all five
     "IMG_RR":     "il_fullxfull.8353422732_fhh6.jpg",      # 11565 Red Rising series
     "IMG_FW":     "il_fullxfull.6672530593_6i4c.jpg",      # 11580 Fourth Wing hardcover
