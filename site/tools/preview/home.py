@@ -4,8 +4,8 @@ the page body, so the full-bleed break-out is actually exercised."""
 import re, subprocess, sys, pathlib
 
 root = pathlib.Path("/home/user/bdzl")
-body = subprocess.run([sys.executable, "site/tools/build_home.py", "--preview"],
-                      cwd=root, capture_output=True, text=True, check=True).stdout
+body = subprocess.run([sys.executable, str(root/"site/tools/build_home.py"), "--preview"],
+                      cwd=pathlib.Path(__file__).parent, capture_output=True, text=True, check=True).stdout
 body = body.replace("<!-- wp:html -->", "").replace("<!-- /wp:html -->", "")
 
 HEAD = """<!doctype html><html><head><meta charset="utf-8">

@@ -67,6 +67,9 @@
 .bk-split img{width:100%;border-radius:12px}
 .bk-fig-tall img{aspect-ratio:1/1;object-fit:cover}
 .bk-fig-wide img{aspect-ratio:4/3;object-fit:cover}
+/* Only one landscape photo exists in the catalogue and the hero uses it, so
+   the custom-kit figure takes a portrait source and crops square. */
+.bk-fig-sq img{aspect-ratio:1/1;object-fit:cover}
 .bk-list{list-style:none;margin:26px 0 0;padding:0;display:grid;gap:14px;counter-reset:n}
 .bk-list li{counter-increment:n;display:grid;grid-template-columns:32px 1fr;gap:14px;align-items:baseline;font-size:1.06rem;color:var(--ink);padding-bottom:14px;border-bottom:1px solid var(--line)}
 .bk-list li::before{content:counter(n,decimal-leading-zero);font-family:var(--sans);font-size:.76rem;font-weight:700;letter-spacing:.06em;color:var(--accent);padding-top:3px}
@@ -106,7 +109,7 @@
   .bk-grid{grid-template-columns:repeat(2,1fr);gap:22px}
   .bk-split{grid-template-columns:1fr;gap:34px}
   .bk-opts{grid-template-columns:repeat(2,1fr)}
-  .bk-fig-tall img{aspect-ratio:16/10}
+  .bk-fig-tall img{aspect-ratio:4/3}
 }
 @media (max-width:600px){
   .bk-grid{grid-template-columns:1fr;gap:18px}
@@ -137,7 +140,7 @@
         </div>
       </div>
       <div class="bk-stack">
-        <img class="a" src="IMG_TOG" alt="The Throne of Glass hardcovers bedazzled as a matching set">
+        <img class="a" src="IMG_TOGB" alt="A bedazzled Kingdom of Ash hardcover">
         <img class="b" src="IMG_TOGC" alt="Close detail of a bedazzled Throne of Glass cover">
       </div>
     </div>
@@ -163,7 +166,7 @@
     </div>
     <div class="bk-grid">
       <a class="bk-card" href="PRODUCT_11567">
-        <div class="bk-card-img"><img src="IMG_TOGB" alt="Throne of Glass hardcover set"><span class="bk-tag">Full set</span></div>
+        <div class="bk-card-img"><img src="IMG_TOG" alt="The Throne of Glass hardcovers bedazzled and lined up"><span class="bk-tag">Full set</span></div>
         <div class="bk-card-body">
           <h3>Throne of Glass, all eight</h3>
           <p>Hardcovers. One tool kit, supplies for every book after.</p>
@@ -217,7 +220,7 @@
 <section class="bk-sec" style="background:var(--white)">
   <div class="bk-wrap">
     <div class="bk-split">
-      <figure class="bk-fig-tall" style="margin:0"><img src="IMG_KIT" alt="Gems, trays, tools and supplies laid out from a kit"></figure>
+      <figure class="bk-fig-tall" style="margin:0"><img src="IMG_KIT" alt="A finished bedazzled A Court of Thorns and Roses cover"></figure>
       <div>
         <p class="bk-kicker">What arrives</p>
         <h2 class="bk-h2" style="margin-top:10px">Open the box and start.</h2>
@@ -277,10 +280,10 @@
       <div>
         <p class="bk-kicker">Custom kits</p>
         <h2 class="bk-h2" style="margin-top:10px">Any book, made to match.</h2>
-        <p class="bk-lede" style="margin-top:18px">Send the book you want and a photo of the cover. Harley builds the kit around it: the right gem count, colours that match, plus tools, trays, wax, glue and sealer. Message before ordering so the quote is right.</p>
+        <p class="bk-lede" style="margin-top:18px">Message Harley before ordering and send a photo of the cover. She reads the gem colours off the artwork herself, so there is nothing to specify: the one choice is whether you would rather have it done in all clear. Hardcover or paperback, with the tools, trays, wax, glue and sealer.</p>
         <div class="bk-btns" style="margin-top:28px"><a class="bk-btn bk-btn--fill" href="PRODUCT_11431">Start a custom kit</a></div>
       </div>
-      <figure class="bk-fig-wide" style="margin:0"><img src="IMG_CUSTOM" alt="A custom bedazzled book cover"></figure>
+      <figure class="bk-fig-sq" style="margin:0"><img src="IMG_CUSTOM" alt="A bedazzled Lightlark cover"></figure>
     </div>
   </div>
 </section>

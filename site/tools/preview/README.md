@@ -1,9 +1,22 @@
-# Local visual check
+# Visual checks
 
-bedazzlekits.com is not reachable from the agent sandbox (the outbound proxy
-403s the domain), so pages cannot be reviewed after publishing. These scripts
-render the same markup and CSS locally in Chromium instead, which is the only
-way to see a layout before it goes live.
+**Prefer `live.mjs`.** bedazzlekits.com *is* reachable now — Chromium just has
+to be pointed at the agent proxy, which `live.mjs` does. Screenshotting the
+real page beats any mock, because the mock has no Astra, no Astra Pro and no
+WooCommerce. Two bugs found this way were invisible locally: Astra's
+`underline-content-links` setting underlining every line of every homepage
+card, and most catalogue photos having Etsy marketing text burned into them.
+
+    node site/tools/preview/live.mjs /                    # homepage
+    node site/tools/preview/live.mjs /product/<slug>      # a product page
+
+Mind the cache: **Breeze does not purge the page cache when the customizer CSS
+changes.** A CSS fix can be live in the database and absent from the page you
+fetch. `live.mjs` adds a cache-buster to every request for that reason; if you
+curl by hand, add one too, or you will conclude a working fix is broken.
+
+The local mocks below are still useful for iterating quickly on markup you
+have not published yet.
 
 Both scripts write their page next to themselves and expect the placeholder
 SVGs in an adjacent `img/` directory (one per `IMG_*` token in

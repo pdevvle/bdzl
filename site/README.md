@@ -62,6 +62,43 @@ from `core/image`, which is why image crops are CSS classes (`hb-tile`,
   (11600, Bedazzling Glue Upgrade) is an add-on rather than a kit, so a fixed
   number was both wrong and brittle as Harley adds listings.
 - Footer credit replaced. See `../wp-plugin/bdz-site-footer/`.
+- Photo changes after Harley's review (see "Photographs" below): the Fourth
+  Wing spine is off the site at her request, and the hero no longer uses a
+  listing thumbnail with Etsy marketing text burned into it.
+- Copy changes after the same review: nothing anywhere now invites a customer
+  to specify gem colours, and the claim that a kit is measured to fit *your*
+  copy is gone from the homepage, About, Contact and the Shop intro.
+
+## Photographs
+
+Harley asked for the Fourth Wing spine (`il_fullxfull.6350839958_rytc`) off
+the site: "I bedazzled it years ago and my work is much straighter now." It
+was the "What arrives" photo and is no longer referenced.
+
+Worth knowing before picking any replacement, because it is not obvious until
+you look at the images themselves: **most catalogue photos are Etsy listing
+thumbnails with marketing text burned into them** — "ONYX STORM BOOK BEDAZZLE
+KIT" and so on, in large white capitals. They came over with the import. On a
+product card the text duplicates the title underneath it and reads as an Etsy
+screenshot rather than a photograph.
+
+Clean, text-free photos currently used: the hero pair (Kingdom of Ash, Empire
+of Storms), the Throne of Glass series shot on the grid card, the Red Rising
+shelf in the sets band, ACOTAR under "What arrives", and Lightlark under
+"Custom kits".
+
+Still carrying burned-in text: the Onyx Storm, Fourth Wing, Dungeon Crawler
+Carl, ACOTAR and Red Rising cards in the grid. Clean alternatives exist in the
+catalogue for all of those except **Fourth Wing**, which has none — so the
+grid cannot be made consistent from existing photos alone. Left as-is pending
+Harley's call.
+
+Only one landscape photo exists in the whole catalogue (the Throne of Glass
+series shot), which is why the custom-kit figure crops square rather than 4:3.
+
+Check crops against the real file dimensions before using a photo; most are
+portrait 1920x2560 or 1200x1800, and a portrait source in a landscape slot
+loses the top and bottom of the book.
 - Single product page: fixed the overlapping columns, and moved the price
   above the short description. See "The single product page" below.
 

@@ -68,6 +68,15 @@ p { margin-bottom: 1.4em; }
 a { color: var(--hb-accent); text-underline-offset: 0.18em; }
 a:hover, a:focus { color: var(--hb-accent-dark); }
 
+/* The homepage block is one big <a>-per-card layout and styles its own links.
+   Astra's `underline-content-links` setting emits
+   `.ast-single-post .entry-content a { text-decoration: underline }`
+   (class-astra-dynamic-css.php:936), which outspecifies the block's own
+   `.bk a` rule and underlines every title, line of body copy and price on
+   the page. Only visible on the live site — the local preview has no Astra. */
+.ast-single-post .entry-content .bk a,
+.entry-content .bk a { text-decoration: none; }
+
 ::selection { background: var(--hb-accent); color: #fff; }
 
 :focus-visible {
