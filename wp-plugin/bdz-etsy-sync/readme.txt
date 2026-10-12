@@ -71,6 +71,35 @@ never claimed.
 * **Review** is reserved for what cannot be represented faithfully — no price,
   no images, or offerings that exist but are all disabled.
 
+== Shipping weight ==
+
+Etsy has no way to make a property affect shipping weight, so a kit and a
+kit-with-the-book are the same weight there. This plugin applies the difference
+as a multiplier.
+
+The listing's Etsy weight is treated as the kit **without** the book. Variations
+whose *Book* property starts with "with" are multiplied (3x by default,
+configurable). Everything else keeps the base weight.
+
+Because it multiplies rather than adds a fixed figure, it scales with the
+multi-kit bundles: a five-kit listing weighing 5 kits becomes 5 kits plus 5
+books at the same ratio.
+
+Only the *Book* property counts. The spine-only kits also offer "With Tools",
+and tools are not a book.
+
+Two things to know:
+
+* If a listing's Etsy weight already *includes* the book, that listing comes out
+  heavy. The base must be the kit alone.
+* A listing with no weight on Etsy gets no weight here — there is nothing to
+  multiply, and inventing one would be worse than leaving it empty. A run
+  reports how many listings are in that state.
+
+Dimensions are imported as Etsy reports them and are **not** adjusted for the
+book, so a carrier using dimensional weight will under-measure the with-book
+variations.
+
 == Running time ==
 
 Importing a few dozen listings with images does not fit in one PHP execution

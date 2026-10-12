@@ -39,6 +39,8 @@ class BDZ_Etsy_Settings {
 			'sync_images'    => 1,
 			'skip_review'    => 0,
 			'draft_missing'  => 1,
+			'book_weight_enabled'    => 1,
+			'book_weight_multiplier' => 3,
 		);
 	}
 
@@ -131,7 +133,12 @@ class BDZ_Etsy_Settings {
 			case 'sync_images':
 			case 'skip_review':
 			case 'draft_missing':
+			case 'book_weight_enabled':
 				return $value ? 1 : 0;
+			case 'book_weight_multiplier':
+				// Below 1 would make the kit-plus-book lighter than the kit.
+				$number = is_numeric( $value ) ? (float) $value : 3.0;
+				return max( 1.0, round( $number, 2 ) );
 			case 'redirect_uri':
 				return esc_url_raw( trim( (string) $value ) );
 			default:

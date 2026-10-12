@@ -107,6 +107,8 @@ class BDZ_Etsy_Admin {
 					'sync_images'   => ! empty( $_POST['sync_images'] ) ? 1 : 0,
 					'skip_review'   => ! empty( $_POST['skip_review'] ) ? 1 : 0,
 					'draft_missing' => ! empty( $_POST['draft_missing'] ) ? 1 : 0,
+					'book_weight_enabled'    => ! empty( $_POST['book_weight_enabled'] ) ? 1 : 0,
+					'book_weight_multiplier' => isset( $_POST['book_weight_multiplier'] ) ? wp_unslash( $_POST['book_weight_multiplier'] ) : 3,
 				);
 
 				// Only overwrite a stored credential if something other than the
@@ -586,6 +588,25 @@ class BDZ_Etsy_Admin {
 									<?php endforeach; ?>
 								</select>
 								<p class="description">Applied to newly created products only. An existing product's status is never overwritten.</p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row">Shipping weight</th>
+							<td>
+								<label>
+									<input type="checkbox" name="book_weight_enabled" value="1" <?php checked( $settings['book_weight_enabled'] ); ?>>
+									Multiply the weight of "with book" variations by
+								</label>
+								<input type="number" name="book_weight_multiplier" min="1" step="0.1" style="width:6em"
+									value="<?php echo esc_attr( $settings['book_weight_multiplier'] ); ?>">
+								<p class="description">
+									Etsy cannot make an option affect shipping weight, so a kit and a
+									kit-with-book ship as the same weight there. The listing's Etsy weight
+									is treated as the kit <strong>without</strong> the book, and
+									"with book" variations are multiplied by this figure.
+									Because it is a multiplier it scales with multi-kit bundles.
+									Only the <em>Book</em> property counts — "With Tools" is not a book.
+								</p>
 							</td>
 						</tr>
 						<tr>

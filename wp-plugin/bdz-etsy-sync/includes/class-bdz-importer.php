@@ -35,12 +35,70 @@ class BDZ_Etsy_Importer {
 	private $new_status;
 	private $sync_images;
 	private $dry_run;
+	private $weight_unit;
+	private $dimension_unit;
+	private $book_multiplier;
 
 	public function __construct( $dry_run = false ) {
 		$this->stock_buffer = BDZ_Etsy_Settings::get_int( 'stock_buffer' );
 		$this->new_status   = BDZ_Etsy_Settings::get( 'new_status' );
 		$this->sync_images  = BDZ_Etsy_Settings::get_bool( 'sync_images' );
 		$this->dry_run      = (bool) $dry_run;
+
+		// WooCommerce stores one unit per store; Etsy reports per listing.
+		$this->weight_unit    = get_option( 'woocommerce_weight_unit', 'oz' );
+		$this->dimension_unit = get_option( 'woocommerce_dimension_unit', 'in' );
+
+		$this->book_multiplier = BDZ_Etsy_Settings::get_bool( 'book_weight_enabled' )
+			? (float) BDZ_Etsy_Settings::get( 'book_weight_multiplier' )
+			: 1.0;
+		if ( $this->book_multiplier < 1.0 ) {
+			$this->book_multiplier = 1.0;
+		}
+	}
+
+	/**
+	 * The listing's weight in the store's unit, or null if Etsy has none.
+	 *
+	 * This is treated as the weight WITHOUT the book — the kit alone. The
+	 * with-book variations multiply it, so if a listing's Etsy weight already
+	 * includes the book, that listing will come out heavy.
+	 */
+	private function base_weight( array $item ) {
+		if ( empty( $item['weight']['value'] ) ) {
+			return null;
+		}
+		return BDZ_Etsy_Normalize::convert_weight(
+			$item['weight']['value'],
+			$item['weight']['unit'],
+			$this->weight_unit
+		);
+	}
+
+	private function store_dimensions( array $item ) {
+		if ( empty( $item['dimensions'] ) ) {
+			return null;
+		}
+		$out = array();
+		foreach ( array( 'length', 'width', 'height' ) as $axis ) {
+			$value = BDZ_Etsy_Normalize::convert_length(
+				isset( $item['dimensions'][ $axis ] ) ? $item['dimensions'][ $axis ] : null,
+				$item['dimensions']['unit'],
+				$this->dimension_unit
+			);
+			$out[ $axis ] = $value ? (string) $value : '';
+		}
+		return array_filter( $out ) ? $out : null;
+	}
+
+	private function apply_dimensions( $product, array $item ) {
+		$dimensions = $this->store_dimensions( $item );
+		if ( ! $dimensions ) {
+			return;
+		}
+		$product->set_length( $dimensions['length'] );
+		$product->set_width( $dimensions['width'] );
+		$product->set_height( $dimensions['height'] );
 	}
 
 	/**
@@ -147,7 +205,22 @@ class BDZ_Etsy_Importer {
 			$product->set_stock_quantity( max( 0, (int) $item['quantity'] - $this->stock_buffer ) );
 			$product->set_backorders( 'no' );
 			$product->set_attributes( array() );
+
+			$weight = $this->base_weight( $item );
+			if ( null !== $weight ) {
+				$product->set_weight( (string) $weight );
+			}
 		}
+
+		// The parent's weight is the no-book figure. WooCommerce falls back to
+		// it for any variation that has none of its own, so it must be the
+		// lighter of the two rather than a guess.
+		if ( $is_variable ) {
+			$weight = $this->base_weight( $item );
+			$product->set_weight( null !== $weight ? (string) $weight : '' );
+		}
+
+		$this->apply_dimensions( $product, $item );
 
 		if ( $is_new ) {
 			$product->set_status( $this->new_status );
@@ -251,8 +324,9 @@ class BDZ_Etsy_Importer {
 	 * @return array { created, updated, removed }
 	 */
 	private function sync_variations( $product_id, array $item ) {
-		$counts = array( 'created' => 0, 'updated' => 0, 'removed' => 0 );
-		$prefix = $item['sku'] . '-';
+		$counts      = array( 'created' => 0, 'updated' => 0, 'removed' => 0 );
+		$prefix      = $item['sku'] . '-';
+		$base_weight = $this->base_weight( $item );
 
 		$existing = array();
 		$parent   = wc_get_product( $product_id );
@@ -291,6 +365,17 @@ class BDZ_Etsy_Importer {
 			$variation->set_sku( $variant['sku'] );
 			$variation->set_attributes( $attributes );
 			$variation->set_regular_price( $variant['price'] );
+
+			// Etsy cannot vary weight by property, so the book's weight is
+			// applied here. The multiplier scales with the listing, which is
+			// what makes it work for multi-book bundles too: a five-kit listing
+			// weighing 5K becomes 5K + 5 books at the same ratio.
+			if ( null !== $base_weight ) {
+				$includes_book = BDZ_Etsy_Normalize::variant_includes_book( $variant['attributes'] );
+				$variation->set_weight(
+					(string) round( $base_weight * ( $includes_book ? $this->book_multiplier : 1.0 ), 3 )
+				);
+			}
 			$variation->set_manage_stock( true );
 			$variation->set_stock_quantity( max( 0, (int) $variant['quantity'] - $this->stock_buffer ) );
 			$variation->set_backorders( 'no' );

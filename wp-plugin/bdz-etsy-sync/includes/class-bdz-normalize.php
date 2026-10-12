@@ -241,6 +241,27 @@ class BDZ_Etsy_Normalize {
 		$section_id    = isset( $listing['shop_section_id'] ) ? (int) $listing['shop_section_id'] : 0;
 		$section_title = ( $section_id && isset( $sections[ $section_id ] ) ) ? $sections[ $section_id ] : '';
 
+		// Etsy carries one weight per listing with its own unit. The store has a
+		// single configured unit, so the raw pair travels in the catalogue and
+		// the importer converts — the same split the CLI uses.
+		$weight = null;
+		if ( ! empty( $listing['item_weight'] ) ) {
+			$weight = array(
+				'value' => $listing['item_weight'],
+				'unit'  => isset( $listing['item_weight_unit'] ) ? (string) $listing['item_weight_unit'] : '',
+			);
+		}
+
+		$dimensions = null;
+		if ( ! empty( $listing['item_length'] ) || ! empty( $listing['item_width'] ) || ! empty( $listing['item_height'] ) ) {
+			$dimensions = array(
+				'length' => isset( $listing['item_length'] ) ? $listing['item_length'] : null,
+				'width'  => isset( $listing['item_width'] ) ? $listing['item_width'] : null,
+				'height' => isset( $listing['item_height'] ) ? $listing['item_height'] : null,
+				'unit'   => isset( $listing['item_dimensions_unit'] ) ? (string) $listing['item_dimensions_unit'] : '',
+			);
+		}
+
 		$tags = array();
 		foreach ( ( isset( $listing['tags'] ) ? $listing['tags'] : array() ) as $tag ) {
 			$tag = trim( (string) $tag );
@@ -270,6 +291,8 @@ class BDZ_Etsy_Normalize {
 			'materials'       => $materials,
 			'section'         => $section_title,
 			'images'          => $normalized_images,
+			'weight'          => $weight,
+			'dimensions'      => $dimensions,
 			'is_variable'     => $is_variable,
 			'attributes'      => $attributes,
 			'variants'        => $variants,
@@ -319,6 +342,64 @@ class BDZ_Etsy_Normalize {
 		$cut = substr( $block, 0, $limit );
 		$cut = substr( $cut, 0, strrpos( $cut, ' ' ) ?: $limit );
 		return rtrim( $cut, ",.;:- " ) . '…';
+	}
+
+	/**
+	 * Etsy reports weight and dimensions in whichever unit the listing used;
+	 * WooCommerce has one configured unit per store. Convert, or drop the value
+	 * rather than importing a number that means something else.
+	 */
+	const WEIGHT_TO_GRAMS = array( 'g' => 1.0, 'kg' => 1000.0, 'oz' => 28.349523125, 'lb' => 453.59237 );
+	const LENGTH_TO_MM    = array( 'mm' => 1.0, 'cm' => 10.0, 'm' => 1000.0, 'in' => 25.4, 'ft' => 304.8 );
+
+	public static function convert_weight( $value, $from_unit, $to_unit ) {
+		if ( ! is_numeric( $value ) || (float) $value <= 0 ) {
+			return null;
+		}
+		$from = strtolower( (string) $from_unit );
+		$to   = strtolower( (string) $to_unit );
+		if ( ! isset( self::WEIGHT_TO_GRAMS[ $from ], self::WEIGHT_TO_GRAMS[ $to ] ) ) {
+			return null;
+		}
+		$grams = (float) $value * self::WEIGHT_TO_GRAMS[ $from ];
+		return round( $grams / self::WEIGHT_TO_GRAMS[ $to ], 3 );
+	}
+
+	public static function convert_length( $value, $from_unit, $to_unit ) {
+		if ( ! is_numeric( $value ) || (float) $value <= 0 ) {
+			return null;
+		}
+		$from = strtolower( (string) $from_unit );
+		$to   = strtolower( (string) $to_unit );
+		if ( ! isset( self::LENGTH_TO_MM[ $from ], self::LENGTH_TO_MM[ $to ] ) ) {
+			return null;
+		}
+		$mm = (float) $value * self::LENGTH_TO_MM[ $from ];
+		return round( $mm / self::LENGTH_TO_MM[ $to ], 3 );
+	}
+
+	/**
+	 * Does this variation include the book itself?
+	 *
+	 * Etsy has no way to make a property affect shipping weight, so the kit and
+	 * the kit-plus-book ship as the same weight there. Here the book's weight is
+	 * applied as a multiplier on the listing's weight.
+	 *
+	 * Scoped to the Book property deliberately: the spine-only kits also offer
+	 * "With Tools", and tools are not a book. Harley's option values are spelled
+	 * inconsistently across listings — "with book", "With Book", "With Books" —
+	 * so the test is a case-insensitive "with" at the start of a Book value.
+	 */
+	public static function variant_includes_book( array $attributes ) {
+		foreach ( $attributes as $name => $value ) {
+			if ( ! preg_match( '/book/i', (string) $name ) ) {
+				continue;
+			}
+			if ( preg_match( '/^\s*with\b/i', (string) $value ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Stable fingerprint of an image set, so unchanged galleries are skipped. */

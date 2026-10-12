@@ -58,8 +58,9 @@ class BDZ_Etsy_Job {
 				'updated'  => 0,
 				'skipped'  => 0,
 				'failed'   => 0,
-				'review'   => 0,
-				'variable' => 0,
+				'review'    => 0,
+				'variable'  => 0,
+				'no_weight' => 0,
 			),
 		);
 	}
@@ -226,6 +227,13 @@ class BDZ_Etsy_Job {
 				$this->state['stats']['variable']++;
 			}
 
+			// Nothing to multiply if Etsy carries no weight for the listing, and
+			// shipping cannot be calculated from it either. Count rather than
+			// warn 59 times.
+			if ( empty( $item['weight']['value'] ) ) {
+				$this->state['stats']['no_weight']++;
+			}
+
 			if ( $item['review'] ) {
 				$this->state['stats']['review']++;
 				BDZ_Etsy_Logger::warn( sprintf( 'REVIEW %s — %s', $item['sku'], implode( '; ', $item['review_reasons'] ) ) );
@@ -340,6 +348,14 @@ class BDZ_Etsy_Job {
 		}
 
 		$stats = $this->state['stats'];
+		if ( ! empty( $stats['no_weight'] ) ) {
+			BDZ_Etsy_Logger::warn(
+				sprintf(
+					'%d listing(s) have no weight set on Etsy — those products cannot ship by weight, and there is nothing for the book multiplier to scale.',
+					$stats['no_weight']
+				)
+			);
+		}
 		BDZ_Etsy_Logger::ok(
 			sprintf(
 				'Done. created=%d updated=%d skipped=%d failed=%d%s',
