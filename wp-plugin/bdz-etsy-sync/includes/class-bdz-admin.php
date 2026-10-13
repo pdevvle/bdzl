@@ -110,6 +110,7 @@ class BDZ_Etsy_Admin {
 					'kit_weight'           => isset( $_POST['kit_weight'] ) ? wp_unslash( $_POST['kit_weight'] ) : 22,
 					'kit_with_book_weight' => isset( $_POST['kit_with_book_weight'] ) ? wp_unslash( $_POST['kit_with_book_weight'] ) : 80,
 					'force_weights'        => ! empty( $_POST['force_weights'] ) ? 1 : 0,
+					'bundle_kit_counts'    => isset( $_POST['bundle_kit_counts'] ) ? wp_unslash( $_POST['bundle_kit_counts'] ) : '',
 				);
 
 				// Only overwrite a stored credential if something other than the
@@ -620,16 +621,53 @@ class BDZ_Etsy_Admin {
 									</label>
 								</p>
 								<p class="description">
-									<strong>These are flat per product.</strong> A multi-kit bundle
-									(&ldquo;ACOTAR all five&rdquo;, &ldquo;Throne of Glass 8 Kit
-									bundle&rdquo;) is five or eight kits and that many books, so the flat
-									figure is far too light. Correct those by hand in the product.
+									The figures are <strong>per kit</strong>. A bundle multiplies them by
+									its kit count below, so five kits with books is 5 &times; the
+									with-book figure, not one of it.
 								</p>
 								<p class="description">
 									A weight already set on a product is <strong>never overwritten</strong>,
 									so hand corrections survive every sync. Products with no weight yet are
 									filled in. Tick the box above only when you have changed the figures and
 									want them pushed over everything.
+								</p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="bundle_kit_counts">Bundle kit counts</label></th>
+							<td>
+								<textarea id="bundle_kit_counts" name="bundle_kit_counts" rows="10" class="large-text code"><?php
+									echo esc_textarea( $settings['bundle_kit_counts'] );
+								?></textarea>
+								<p class="description">
+									One line per listing that holds more than one kit:
+									<code>&lt;listing id&gt; = &lt;kits in the box&gt;</code>.
+									Blank lines and <code>#</code> comments are ignored. The listing id is
+									the product's SKU.
+								</p>
+								<p class="description">
+									<?php
+									$counts = BDZ_Etsy_Settings::kit_counts();
+									$kit    = (float) BDZ_Etsy_Settings::get( 'kit_weight' );
+									$book   = (float) BDZ_Etsy_Settings::get( 'kit_with_book_weight' );
+									if ( $counts ) {
+										echo '<strong>' . count( $counts ) . ' configured.</strong> ';
+										$bits = array();
+										foreach ( $counts as $id => $n ) {
+											$bits[] = sprintf(
+												'%s: %d&times; = %s / %s %s',
+												esc_html( $id ),
+												$n,
+												esc_html( (string) round( $kit * $n, 3 ) ),
+												esc_html( (string) round( $book * $n, 3 ) ),
+												esc_html( get_option( 'woocommerce_weight_unit', 'oz' ) )
+											);
+										}
+										echo wp_kses_post( implode( '<br>', $bits ) );
+									} else {
+										echo 'None configured — every listing is weighed as a single kit.';
+									}
+									?>
 								</p>
 							</td>
 						</tr>

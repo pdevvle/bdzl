@@ -40,6 +40,7 @@ class BDZ_Etsy_Importer {
 	private $kit_weight;
 	private $kit_with_book_weight;
 	private $force_weights;
+	private $kit_counts;
 
 	public function __construct( $dry_run = false ) {
 		$this->stock_buffer = BDZ_Etsy_Settings::get_int( 'stock_buffer' );
@@ -58,6 +59,7 @@ class BDZ_Etsy_Importer {
 		$this->kit_weight           = (float) BDZ_Etsy_Settings::get( 'kit_weight' );
 		$this->kit_with_book_weight = (float) BDZ_Etsy_Settings::get( 'kit_with_book_weight' );
 		$this->force_weights        = BDZ_Etsy_Settings::get_bool( 'force_weights' );
+		$this->kit_counts           = BDZ_Etsy_Settings::kit_counts();
 	}
 
 	/**
@@ -91,9 +93,17 @@ class BDZ_Etsy_Importer {
 		$configured    = $includes_book ? $this->kit_with_book_weight : $this->kit_weight;
 
 		if ( $configured > 0 ) {
-			return round( $configured, 3 );
+			// The configured figures are per kit, so a bundle multiplies them.
+			// Five kits and five books is not one of each.
+			return round( $configured * $this->kit_count( $item ), 3 );
 		}
 		return $this->etsy_weight( $item );
+	}
+
+	/** Kits in this listing's box. 1 unless configured otherwise. */
+	private function kit_count( array $item ) {
+		$id = (string) $item['etsy_listing_id'];
+		return isset( $this->kit_counts[ $id ] ) ? max( 1, (int) $this->kit_counts[ $id ] ) : 1;
 	}
 
 	/**
@@ -127,7 +137,19 @@ class BDZ_Etsy_Importer {
 		return array_filter( $out ) ? $out : null;
 	}
 
-	private function apply_dimensions( $product, array $item ) {
+	private function apply_dimensions( $product, array $item, $is_new ) {
+		// Bundle boxes are sized by hand — Etsy carries no dimensions at all for
+		// this shop, and a box of eight kits is not a guess worth making. Never
+		// overwrite dimensions that are already set.
+		if ( ! $this->force_weights && ! $is_new ) {
+			$already = trim( (string) $product->get_length() )
+				. trim( (string) $product->get_width() )
+				. trim( (string) $product->get_height() );
+			if ( '' !== $already ) {
+				return;
+			}
+		}
+
 		$dimensions = $this->store_dimensions( $item );
 		if ( ! $dimensions ) {
 			return;
@@ -256,7 +278,7 @@ class BDZ_Etsy_Importer {
 			$product->set_weight( null !== $weight ? (string) $weight : '' );
 		}
 
-		$this->apply_dimensions( $product, $item );
+		$this->apply_dimensions( $product, $item, $is_new );
 
 		if ( $is_new ) {
 			$product->set_status( $this->new_status );
@@ -265,6 +287,16 @@ class BDZ_Etsy_Importer {
 		$product_id = $product->save();
 		if ( ! $product_id ) {
 			return $this->outcome( 'failed', sprintf( '%s could not be saved.', $sku ) );
+		}
+
+		if ( $this->kit_count( $item ) === 1 && BDZ_Etsy_Normalize::looks_multi_kit( $item['title'] ) ) {
+			BDZ_Etsy_Logger::warn(
+				sprintf(
+					'%s looks like it holds more than one kit but has no kit count configured, so it is weighed as a single kit — %s',
+					$sku,
+					$title
+				)
+			);
 		}
 
 		$variation_note = '';

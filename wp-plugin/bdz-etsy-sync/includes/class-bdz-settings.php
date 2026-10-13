@@ -18,6 +18,15 @@ class BDZ_Etsy_Settings {
 
 	const OPTION = 'bdz_etsy_settings';
 
+	/**
+	 * Multi-kit listings, as "<listing id> = <kits in the box>".
+	 *
+	 * Every one of these was found two independent ways — a title naming more
+	 * than one kit, and a top variant price far above a single kit — and the
+	 * count then checked against price per kit.
+	 */
+	const DEFAULT_KIT_COUNTS = "4463553748 = 8   # Throne of Glass 8 Bedazzle Kit bundle\n4550005746 = 8   # Throne of Glass HARDCOVER set\n4569859586 = 7   # Dungeon Crawler Carl Spine Only (full set)\n4551858837 = 6   # Red Rising Series\n4302308611 = 5   # ACOTAR all five\n4300717084 = 5   # ACOTAR all five B&N Editions\n4485449813 = 5   # ACOTAR HARDCOVER\n1853002208 = 3   # All 3 Fourth Wing Hardcover\n4385844332 = 3   # OUABH UK (gem options only, no book variant)";
+
 	/** Settings that may be overridden by a wp-config.php constant. */
 	const CONSTANTS = array(
 		'keystring'     => 'BDZ_ETSY_KEYSTRING',
@@ -44,6 +53,11 @@ class BDZ_Etsy_Settings {
 			'kit_weight'           => 22,
 			'kit_with_book_weight' => 80,
 			'force_weights'        => 0,
+			// Listings holding more than one kit. The configured kit weights are
+			// per kit, so a bundle multiplies them: five kits and five books is
+			// not one of each. Counts come from the listing titles and were
+			// cross-checked against price per kit.
+			'bundle_kit_counts'    => self::DEFAULT_KIT_COUNTS,
 		);
 	}
 
@@ -145,9 +159,35 @@ class BDZ_Etsy_Settings {
 				return max( 0.0, round( $number, 3 ) );
 			case 'redirect_uri':
 				return esc_url_raw( trim( (string) $value ) );
+			case 'bundle_kit_counts':
+				return sanitize_textarea_field( (string) $value );
 			default:
 				return sanitize_text_field( trim( (string) $value ) );
 		}
+	}
+
+	/**
+	 * Parsed multi-kit counts: listing id => kits in the box.
+	 *
+	 * Lenient on purpose — "id = n", "id: n" and "id n" all parse, blank lines
+	 * and # comments are ignored — because this is hand-maintained.
+	 */
+	public static function kit_counts() {
+		$out = array();
+		foreach ( preg_split( '/\r\n|\r|\n/', (string) self::get( 'bundle_kit_counts' ) ) as $line ) {
+			$line = trim( preg_replace( '/#.*$/', '', $line ) );
+			if ( '' === $line ) {
+				continue;
+			}
+			if ( ! preg_match( '/^(\d+)\s*[=:,]?\s*(\d+)\s*$/', $line, $m ) ) {
+				continue;
+			}
+			$count = (int) $m[2];
+			if ( $count > 0 ) {
+				$out[ $m[1] ] = $count;
+			}
+		}
+		return $out;
 	}
 
 	/**

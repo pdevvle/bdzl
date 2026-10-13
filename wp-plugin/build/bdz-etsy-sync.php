@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Etsy Sync for WooCommerce
  * Description: Imports and keeps in sync the Etsy catalogue as WooCommerce products. Etsy stays the source of truth; nothing here ever deletes a product.
- * Version:     1.4.0
+ * Version:     1.5.0
  * Requires PHP: 7.4
  * Author:      HarleysBooks
  * License:     GPL-2.0-or-later
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'BDZ_ETSY_VERSION', '1.4.0' );
+define( 'BDZ_ETSY_VERSION', '1.5.0' );
 define( 'BDZ_ETSY_FILE', __FILE__ );
 define( 'BDZ_ETSY_DIR', plugin_dir_path( __FILE__ ) );
 define( 'BDZ_ETSY_URL', plugin_dir_url( __FILE__ ) );
@@ -396,6 +396,15 @@ class BDZ_Etsy_Settings {
 
 	const OPTION = 'bdz_etsy_settings';
 
+	/**
+	 * Multi-kit listings, as "<listing id> = <kits in the box>".
+	 *
+	 * Every one of these was found two independent ways — a title naming more
+	 * than one kit, and a top variant price far above a single kit — and the
+	 * count then checked against price per kit.
+	 */
+	const DEFAULT_KIT_COUNTS = "4463553748 = 8   # Throne of Glass 8 Bedazzle Kit bundle\n4550005746 = 8   # Throne of Glass HARDCOVER set\n4569859586 = 7   # Dungeon Crawler Carl Spine Only (full set)\n4551858837 = 6   # Red Rising Series\n4302308611 = 5   # ACOTAR all five\n4300717084 = 5   # ACOTAR all five B&N Editions\n4485449813 = 5   # ACOTAR HARDCOVER\n1853002208 = 3   # All 3 Fourth Wing Hardcover\n4385844332 = 3   # OUABH UK (gem options only, no book variant)";
+
 	/** Settings that may be overridden by a wp-config.php constant. */
 	const CONSTANTS = array(
 		'keystring'     => 'BDZ_ETSY_KEYSTRING',
@@ -422,6 +431,11 @@ class BDZ_Etsy_Settings {
 			'kit_weight'           => 22,
 			'kit_with_book_weight' => 80,
 			'force_weights'        => 0,
+			// Listings holding more than one kit. The configured kit weights are
+			// per kit, so a bundle multiplies them: five kits and five books is
+			// not one of each. Counts come from the listing titles and were
+			// cross-checked against price per kit.
+			'bundle_kit_counts'    => self::DEFAULT_KIT_COUNTS,
 		);
 	}
 
@@ -523,9 +537,35 @@ class BDZ_Etsy_Settings {
 				return max( 0.0, round( $number, 3 ) );
 			case 'redirect_uri':
 				return esc_url_raw( trim( (string) $value ) );
+			case 'bundle_kit_counts':
+				return sanitize_textarea_field( (string) $value );
 			default:
 				return sanitize_text_field( trim( (string) $value ) );
 		}
+	}
+
+	/**
+	 * Parsed multi-kit counts: listing id => kits in the box.
+	 *
+	 * Lenient on purpose — "id = n", "id: n" and "id n" all parse, blank lines
+	 * and # comments are ignored — because this is hand-maintained.
+	 */
+	public static function kit_counts() {
+		$out = array();
+		foreach ( preg_split( '/\r\n|\r|\n/', (string) self::get( 'bundle_kit_counts' ) ) as $line ) {
+			$line = trim( preg_replace( '/#.*$/', '', $line ) );
+			if ( '' === $line ) {
+				continue;
+			}
+			if ( ! preg_match( '/^(\d+)\s*[=:,]?\s*(\d+)\s*$/', $line, $m ) ) {
+				continue;
+			}
+			$count = (int) $m[2];
+			if ( $count > 0 ) {
+				$out[ $m[1] ] = $count;
+			}
+		}
+		return $out;
 	}
 
 	/**
@@ -1475,6 +1515,21 @@ class BDZ_Etsy_Normalize {
 		return false;
 	}
 
+	/**
+	 * Does this title suggest the box holds more than one kit?
+	 *
+	 * Only used to warn when such a listing has no kit count configured — the
+	 * weight itself always comes from the configured counts, never from a guess
+	 * about the title. On this shop the heuristic and "top variant price far
+	 * above a single kit" picked out exactly the same nine listings.
+	 */
+	public static function looks_multi_kit( $title ) {
+		return (bool) preg_match(
+			'/\b(all\s+\w+|all\s*\d+|bundle|full\s+set|set|series|kits)\b/i',
+			(string) $title
+		);
+	}
+
 	/** Stable fingerprint of an image set, so unchanged galleries are skipped. */
 	public static function image_signature( array $item ) {
 		$urls = array();
@@ -1536,6 +1591,7 @@ class BDZ_Etsy_Importer {
 	private $kit_weight;
 	private $kit_with_book_weight;
 	private $force_weights;
+	private $kit_counts;
 
 	public function __construct( $dry_run = false ) {
 		$this->stock_buffer = BDZ_Etsy_Settings::get_int( 'stock_buffer' );
@@ -1554,6 +1610,7 @@ class BDZ_Etsy_Importer {
 		$this->kit_weight           = (float) BDZ_Etsy_Settings::get( 'kit_weight' );
 		$this->kit_with_book_weight = (float) BDZ_Etsy_Settings::get( 'kit_with_book_weight' );
 		$this->force_weights        = BDZ_Etsy_Settings::get_bool( 'force_weights' );
+		$this->kit_counts           = BDZ_Etsy_Settings::kit_counts();
 	}
 
 	/**
@@ -1587,9 +1644,17 @@ class BDZ_Etsy_Importer {
 		$configured    = $includes_book ? $this->kit_with_book_weight : $this->kit_weight;
 
 		if ( $configured > 0 ) {
-			return round( $configured, 3 );
+			// The configured figures are per kit, so a bundle multiplies them.
+			// Five kits and five books is not one of each.
+			return round( $configured * $this->kit_count( $item ), 3 );
 		}
 		return $this->etsy_weight( $item );
+	}
+
+	/** Kits in this listing's box. 1 unless configured otherwise. */
+	private function kit_count( array $item ) {
+		$id = (string) $item['etsy_listing_id'];
+		return isset( $this->kit_counts[ $id ] ) ? max( 1, (int) $this->kit_counts[ $id ] ) : 1;
 	}
 
 	/**
@@ -1623,7 +1688,19 @@ class BDZ_Etsy_Importer {
 		return array_filter( $out ) ? $out : null;
 	}
 
-	private function apply_dimensions( $product, array $item ) {
+	private function apply_dimensions( $product, array $item, $is_new ) {
+		// Bundle boxes are sized by hand — Etsy carries no dimensions at all for
+		// this shop, and a box of eight kits is not a guess worth making. Never
+		// overwrite dimensions that are already set.
+		if ( ! $this->force_weights && ! $is_new ) {
+			$already = trim( (string) $product->get_length() )
+				. trim( (string) $product->get_width() )
+				. trim( (string) $product->get_height() );
+			if ( '' !== $already ) {
+				return;
+			}
+		}
+
 		$dimensions = $this->store_dimensions( $item );
 		if ( ! $dimensions ) {
 			return;
@@ -1752,7 +1829,7 @@ class BDZ_Etsy_Importer {
 			$product->set_weight( null !== $weight ? (string) $weight : '' );
 		}
 
-		$this->apply_dimensions( $product, $item );
+		$this->apply_dimensions( $product, $item, $is_new );
 
 		if ( $is_new ) {
 			$product->set_status( $this->new_status );
@@ -1761,6 +1838,16 @@ class BDZ_Etsy_Importer {
 		$product_id = $product->save();
 		if ( ! $product_id ) {
 			return $this->outcome( 'failed', sprintf( '%s could not be saved.', $sku ) );
+		}
+
+		if ( $this->kit_count( $item ) === 1 && BDZ_Etsy_Normalize::looks_multi_kit( $item['title'] ) ) {
+			BDZ_Etsy_Logger::warn(
+				sprintf(
+					'%s looks like it holds more than one kit but has no kit count configured, so it is weighed as a single kit — %s',
+					$sku,
+					$title
+				)
+			);
 		}
 
 		$variation_note = '';
@@ -2695,6 +2782,7 @@ class BDZ_Etsy_Admin {
 					'kit_weight'           => isset( $_POST['kit_weight'] ) ? wp_unslash( $_POST['kit_weight'] ) : 22,
 					'kit_with_book_weight' => isset( $_POST['kit_with_book_weight'] ) ? wp_unslash( $_POST['kit_with_book_weight'] ) : 80,
 					'force_weights'        => ! empty( $_POST['force_weights'] ) ? 1 : 0,
+					'bundle_kit_counts'    => isset( $_POST['bundle_kit_counts'] ) ? wp_unslash( $_POST['bundle_kit_counts'] ) : '',
 				);
 
 				// Only overwrite a stored credential if something other than the
@@ -3205,16 +3293,53 @@ class BDZ_Etsy_Admin {
 									</label>
 								</p>
 								<p class="description">
-									<strong>These are flat per product.</strong> A multi-kit bundle
-									(&ldquo;ACOTAR all five&rdquo;, &ldquo;Throne of Glass 8 Kit
-									bundle&rdquo;) is five or eight kits and that many books, so the flat
-									figure is far too light. Correct those by hand in the product.
+									The figures are <strong>per kit</strong>. A bundle multiplies them by
+									its kit count below, so five kits with books is 5 &times; the
+									with-book figure, not one of it.
 								</p>
 								<p class="description">
 									A weight already set on a product is <strong>never overwritten</strong>,
 									so hand corrections survive every sync. Products with no weight yet are
 									filled in. Tick the box above only when you have changed the figures and
 									want them pushed over everything.
+								</p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="bundle_kit_counts">Bundle kit counts</label></th>
+							<td>
+								<textarea id="bundle_kit_counts" name="bundle_kit_counts" rows="10" class="large-text code"><?php
+									echo esc_textarea( $settings['bundle_kit_counts'] );
+								?></textarea>
+								<p class="description">
+									One line per listing that holds more than one kit:
+									<code>&lt;listing id&gt; = &lt;kits in the box&gt;</code>.
+									Blank lines and <code>#</code> comments are ignored. The listing id is
+									the product's SKU.
+								</p>
+								<p class="description">
+									<?php
+									$counts = BDZ_Etsy_Settings::kit_counts();
+									$kit    = (float) BDZ_Etsy_Settings::get( 'kit_weight' );
+									$book   = (float) BDZ_Etsy_Settings::get( 'kit_with_book_weight' );
+									if ( $counts ) {
+										echo '<strong>' . count( $counts ) . ' configured.</strong> ';
+										$bits = array();
+										foreach ( $counts as $id => $n ) {
+											$bits[] = sprintf(
+												'%s: %d&times; = %s / %s %s',
+												esc_html( $id ),
+												$n,
+												esc_html( (string) round( $kit * $n, 3 ) ),
+												esc_html( (string) round( $book * $n, 3 ) ),
+												esc_html( get_option( 'woocommerce_weight_unit', 'oz' ) )
+											);
+										}
+										echo wp_kses_post( implode( '<br>', $bits ) );
+									} else {
+										echo 'None configured — every listing is weighed as a single kit.';
+									}
+									?>
 								</p>
 							</td>
 						</tr>

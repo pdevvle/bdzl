@@ -87,11 +87,28 @@ not a book.
 Figures are entered in the store's own weight unit. Set one to `0` to fall back
 to whatever weight the Etsy listing carries.
 
-**The figures are flat per product.** A multi-kit bundle — "ACOTAR all five",
-"Throne of Glass 8 Kit bundle", "All 3 Fourth Wing" — is five, eight or three
-kits plus that many books, so the flat figure is far too light and will
-under-charge shipping on the most expensive orders in the shop. Correct those
-products by hand.
+**The figures are per kit.** A listing holding more than one kit multiplies
+them by its kit count, set in *Bundle kit counts* as one
+`<listing id> = <kits>` per line. Five kits with books is five times the
+with-book figure, not one of it.
+
+The nine multi-kit listings in this shop ship configured:
+
+    4463553748 = 8   Throne of Glass 8 Bedazzle Kit bundle
+    4550005746 = 8   Throne of Glass HARDCOVER set
+    4569859586 = 7   Dungeon Crawler Carl Spine Only (full set)
+    4551858837 = 6   Red Rising Series
+    4302308611 = 5   ACOTAR all five
+    4300717084 = 5   ACOTAR all five B&N Editions
+    4485449813 = 5   ACOTAR HARDCOVER
+    1853002208 = 3   All 3 Fourth Wing Hardcover
+    4385844332 = 3   OUABH UK (gem options only, so no with-book variant)
+
+Each was found two independent ways — a title naming more than one kit, and a
+top variant price far above a single kit — and the count then checked against
+price per kit. A listing whose title suggests several kits but has no count
+configured is **warned about** on every run rather than quietly shipping at the
+weight of one kit.
 
 A hand correction is safe: **a weight already set on a product or variation is
 never overwritten.** Products with no weight yet are filled in, which is what an
@@ -99,9 +116,10 @@ already-imported catalogue needs. Tick *Reapply these weights to existing
 products* only when the figures themselves have changed and should be pushed
 over everything — including the hand corrections.
 
-Dimensions are imported as Etsy reports them and are not adjusted for the book,
-so a carrier using dimensional weight will under-measure the with-book
-variations.
+Dimensions matter mainly for the bundles, and Etsy carries none at all for this
+shop, so they are set by hand on those nine products. As with weight, **a
+dimension already set is never overwritten** — a bundle box measured once stays
+measured. Dimensions are not adjusted for the book.
 
 == Running time ==
 

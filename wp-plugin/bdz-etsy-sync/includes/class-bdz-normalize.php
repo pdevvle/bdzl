@@ -402,6 +402,21 @@ class BDZ_Etsy_Normalize {
 		return false;
 	}
 
+	/**
+	 * Does this title suggest the box holds more than one kit?
+	 *
+	 * Only used to warn when such a listing has no kit count configured — the
+	 * weight itself always comes from the configured counts, never from a guess
+	 * about the title. On this shop the heuristic and "top variant price far
+	 * above a single kit" picked out exactly the same nine listings.
+	 */
+	public static function looks_multi_kit( $title ) {
+		return (bool) preg_match(
+			'/\b(all\s+\w+|all\s*\d+|bundle|full\s+set|set|series|kits)\b/i',
+			(string) $title
+		);
+	}
+
 	/** Stable fingerprint of an image set, so unchanged galleries are skipped. */
 	public static function image_signature( array $item ) {
 		$urls = array();
