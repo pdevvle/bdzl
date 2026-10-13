@@ -107,8 +107,9 @@ class BDZ_Etsy_Admin {
 					'sync_images'   => ! empty( $_POST['sync_images'] ) ? 1 : 0,
 					'skip_review'   => ! empty( $_POST['skip_review'] ) ? 1 : 0,
 					'draft_missing' => ! empty( $_POST['draft_missing'] ) ? 1 : 0,
-					'book_weight_enabled'    => ! empty( $_POST['book_weight_enabled'] ) ? 1 : 0,
-					'book_weight_multiplier' => isset( $_POST['book_weight_multiplier'] ) ? wp_unslash( $_POST['book_weight_multiplier'] ) : 3,
+					'kit_weight'           => isset( $_POST['kit_weight'] ) ? wp_unslash( $_POST['kit_weight'] ) : 22,
+					'kit_with_book_weight' => isset( $_POST['kit_with_book_weight'] ) ? wp_unslash( $_POST['kit_with_book_weight'] ) : 80,
+					'force_weights'        => ! empty( $_POST['force_weights'] ) ? 1 : 0,
 				);
 
 				// Only overwrite a stored credential if something other than the
@@ -593,19 +594,42 @@ class BDZ_Etsy_Admin {
 						<tr>
 							<th scope="row">Shipping weight</th>
 							<td>
-								<label>
-									<input type="checkbox" name="book_weight_enabled" value="1" <?php checked( $settings['book_weight_enabled'] ); ?>>
-									Multiply the weight of "with book" variations by
-								</label>
-								<input type="number" name="book_weight_multiplier" min="1" step="0.1" style="width:6em"
-									value="<?php echo esc_attr( $settings['book_weight_multiplier'] ); ?>">
+								<?php $unit = esc_html( get_option( 'woocommerce_weight_unit', 'oz' ) ); ?>
+								<p>
+									<label style="display:inline-block;min-width:11em">Kit only</label>
+									<input type="number" name="kit_weight" min="0" step="0.001" style="width:7em"
+										value="<?php echo esc_attr( $settings['kit_weight'] ); ?>"> <?php echo $unit; ?>
+								</p>
+								<p>
+									<label style="display:inline-block;min-width:11em">Kit with the book</label>
+									<input type="number" name="kit_with_book_weight" min="0" step="0.001" style="width:7em"
+										value="<?php echo esc_attr( $settings['kit_with_book_weight'] ); ?>"> <?php echo $unit; ?>
+								</p>
 								<p class="description">
-									Etsy cannot make an option affect shipping weight, so a kit and a
-									kit-with-book ship as the same weight there. The listing's Etsy weight
-									is treated as the kit <strong>without</strong> the book, and
-									"with book" variations are multiplied by this figure.
-									Because it is a multiplier it scales with multi-kit bundles.
+									Etsy cannot make an option affect shipping weight, so these are the
+									store's own figures. Variations whose <em>Book</em> option starts with
+									"with" get the second weight; everything else gets the first.
 									Only the <em>Book</em> property counts — "With Tools" is not a book.
+									Set a figure to <code>0</code> to fall back to whatever weight the
+									Etsy listing carries.
+								</p>
+								<p>
+									<label>
+										<input type="checkbox" name="force_weights" value="1" <?php checked( $settings['force_weights'] ); ?>>
+										Reapply these weights to existing products
+									</label>
+								</p>
+								<p class="description">
+									<strong>These are flat per product.</strong> A multi-kit bundle
+									(&ldquo;ACOTAR all five&rdquo;, &ldquo;Throne of Glass 8 Kit
+									bundle&rdquo;) is five or eight kits and that many books, so the flat
+									figure is far too light. Correct those by hand in the product.
+								</p>
+								<p class="description">
+									A weight already set on a product is <strong>never overwritten</strong>,
+									so hand corrections survive every sync. Products with no weight yet are
+									filled in. Tick the box above only when you have changed the figures and
+									want them pushed over everything.
 								</p>
 							</td>
 						</tr>

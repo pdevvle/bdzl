@@ -73,31 +73,34 @@ never claimed.
 
 == Shipping weight ==
 
-Etsy has no way to make a property affect shipping weight, so a kit and a
-kit-with-the-book are the same weight there. This plugin applies the difference
-as a multiplier.
+Etsy has no way to make a property affect shipping weight, and its listing
+weights are not reliable for shipping anyway, so the figures are set here:
 
-The listing's Etsy weight is treated as the kit **without** the book. Variations
-whose *Book* property starts with "with" are multiplied (3x by default,
-configurable). Everything else keeps the base weight.
+* **Kit only** — 22 oz by default
+* **Kit with the book** — 80 oz (5 lb) by default
 
-Because it multiplies rather than adds a fixed figure, it scales with the
-multi-kit bundles: a five-kit listing weighing 5 kits becomes 5 kits plus 5
-books at the same ratio.
+Variations whose *Book* option starts with "with" get the second figure;
+everything else, including simple products, gets the first. Only the *Book*
+property counts — the spine-only kits also offer "With Tools", and tools are
+not a book.
 
-Only the *Book* property counts. The spine-only kits also offer "With Tools",
-and tools are not a book.
+Figures are entered in the store's own weight unit. Set one to `0` to fall back
+to whatever weight the Etsy listing carries.
 
-Two things to know:
+**The figures are flat per product.** A multi-kit bundle — "ACOTAR all five",
+"Throne of Glass 8 Kit bundle", "All 3 Fourth Wing" — is five, eight or three
+kits plus that many books, so the flat figure is far too light and will
+under-charge shipping on the most expensive orders in the shop. Correct those
+products by hand.
 
-* If a listing's Etsy weight already *includes* the book, that listing comes out
-  heavy. The base must be the kit alone.
-* A listing with no weight on Etsy gets no weight here — there is nothing to
-  multiply, and inventing one would be worse than leaving it empty. A run
-  reports how many listings are in that state.
+A hand correction is safe: **a weight already set on a product or variation is
+never overwritten.** Products with no weight yet are filled in, which is what an
+already-imported catalogue needs. Tick *Reapply these weights to existing
+products* only when the figures themselves have changed and should be pushed
+over everything — including the hand corrections.
 
-Dimensions are imported as Etsy reports them and are **not** adjusted for the
-book, so a carrier using dimensional weight will under-measure the with-book
+Dimensions are imported as Etsy reports them and are not adjusted for the book,
+so a carrier using dimensional weight will under-measure the with-book
 variations.
 
 == Running time ==

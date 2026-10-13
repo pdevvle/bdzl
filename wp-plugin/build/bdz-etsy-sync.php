@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Etsy Sync for WooCommerce
  * Description: Imports and keeps in sync the Etsy catalogue as WooCommerce products. Etsy stays the source of truth; nothing here ever deletes a product.
- * Version:     1.3.0
+ * Version:     1.4.0
  * Requires PHP: 7.4
  * Author:      HarleysBooks
  * License:     GPL-2.0-or-later
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'BDZ_ETSY_VERSION', '1.3.0' );
+define( 'BDZ_ETSY_VERSION', '1.4.0' );
 define( 'BDZ_ETSY_FILE', __FILE__ );
 define( 'BDZ_ETSY_DIR', plugin_dir_path( __FILE__ ) );
 define( 'BDZ_ETSY_URL', plugin_dir_url( __FILE__ ) );
@@ -417,8 +417,11 @@ class BDZ_Etsy_Settings {
 			'sync_images'    => 1,
 			'skip_review'    => 0,
 			'draft_missing'  => 1,
-			'book_weight_enabled'    => 1,
-			'book_weight_multiplier' => 3,
+			// Shipping weights in the store's own unit (oz here). 22 oz is the
+			// kit; 80 oz is 5 lb, the kit with the book in the box.
+			'kit_weight'           => 22,
+			'kit_with_book_weight' => 80,
+			'force_weights'        => 0,
 		);
 	}
 
@@ -511,12 +514,13 @@ class BDZ_Etsy_Settings {
 			case 'sync_images':
 			case 'skip_review':
 			case 'draft_missing':
-			case 'book_weight_enabled':
+			case 'force_weights':
 				return $value ? 1 : 0;
-			case 'book_weight_multiplier':
-				// Below 1 would make the kit-plus-book lighter than the kit.
-				$number = is_numeric( $value ) ? (float) $value : 3.0;
-				return max( 1.0, round( $number, 2 ) );
+			case 'kit_weight':
+			case 'kit_with_book_weight':
+				// Zero is meaningful: it means "use whatever Etsy reported".
+				$number = is_numeric( $value ) ? (float) $value : 0.0;
+				return max( 0.0, round( $number, 3 ) );
 			case 'redirect_uri':
 				return esc_url_raw( trim( (string) $value ) );
 			default:
@@ -1529,7 +1533,9 @@ class BDZ_Etsy_Importer {
 	private $dry_run;
 	private $weight_unit;
 	private $dimension_unit;
-	private $book_multiplier;
+	private $kit_weight;
+	private $kit_with_book_weight;
+	private $force_weights;
 
 	public function __construct( $dry_run = false ) {
 		$this->stock_buffer = BDZ_Etsy_Settings::get_int( 'stock_buffer' );
@@ -1541,22 +1547,56 @@ class BDZ_Etsy_Importer {
 		$this->weight_unit    = get_option( 'woocommerce_weight_unit', 'oz' );
 		$this->dimension_unit = get_option( 'woocommerce_dimension_unit', 'in' );
 
-		$this->book_multiplier = BDZ_Etsy_Settings::get_bool( 'book_weight_enabled' )
-			? (float) BDZ_Etsy_Settings::get( 'book_weight_multiplier' )
-			: 1.0;
-		if ( $this->book_multiplier < 1.0 ) {
-			$this->book_multiplier = 1.0;
-		}
+		// Shipping weights are set here, not taken from Etsy. Etsy has no way to
+		// make a property affect weight, and the listing weights there are not
+		// reliable for shipping, so these are the store's own figures in the
+		// store's own unit. Zero means "fall back to whatever Etsy reported".
+		$this->kit_weight           = (float) BDZ_Etsy_Settings::get( 'kit_weight' );
+		$this->kit_with_book_weight = (float) BDZ_Etsy_Settings::get( 'kit_with_book_weight' );
+		$this->force_weights        = BDZ_Etsy_Settings::get_bool( 'force_weights' );
 	}
 
 	/**
-	 * The listing's weight in the store's unit, or null if Etsy has none.
+	 * May this run write a weight onto something that already exists?
 	 *
-	 * This is treated as the weight WITHOUT the book — the kit alone. The
-	 * with-book variations multiply it, so if a listing's Etsy weight already
-	 * includes the book, that listing will come out heavy.
+	 * The configured figures are flat per product, which is wrong for the
+	 * multi-kit bundles — five kits and five books do not weigh one kit and one
+	 * book. Those have to be corrected by hand, and a correction is worthless if
+	 * the next hourly sync overwrites it.
+	 *
+	 * So an existing weight is left alone. A product with no weight yet is
+	 * filled in, which is what the already-imported catalogue needs, and
+	 * "Reapply weights" overrides the lot when the figures themselves change.
 	 */
-	private function base_weight( array $item ) {
+	private function may_write_weight( $object, $is_new ) {
+		if ( $this->force_weights || $is_new ) {
+			return true;
+		}
+		return '' === trim( (string) $object->get_weight() );
+	}
+
+	/**
+	 * Weight for one variation, in the store's unit.
+	 *
+	 * The configured figures win. They are flat per product, so a multi-kit
+	 * bundle weighs the same as a single kit unless its weight is corrected by
+	 * hand — see the readme.
+	 */
+	private function variation_weight( array $item, array $variant_attributes ) {
+		$includes_book = BDZ_Etsy_Normalize::variant_includes_book( $variant_attributes );
+		$configured    = $includes_book ? $this->kit_with_book_weight : $this->kit_weight;
+
+		if ( $configured > 0 ) {
+			return round( $configured, 3 );
+		}
+		return $this->etsy_weight( $item );
+	}
+
+	/**
+	 * The listing's own Etsy weight in the store's unit, or null if it has none.
+	 * Only used when no weight is configured for the store.
+	 */
+	private function etsy_weight( array $item ) {
 		if ( empty( $item['weight']['value'] ) ) {
 			return null;
 		}
@@ -1698,8 +1738,8 @@ class BDZ_Etsy_Importer {
 			$product->set_backorders( 'no' );
 			$product->set_attributes( array() );
 
-			$weight = $this->base_weight( $item );
-			if ( null !== $weight ) {
+			$weight = $this->variation_weight( $item, array() );
+			if ( null !== $weight && $this->may_write_weight( $product, $is_new ) ) {
 				$product->set_weight( (string) $weight );
 			}
 		}
@@ -1707,8 +1747,8 @@ class BDZ_Etsy_Importer {
 		// The parent's weight is the no-book figure. WooCommerce falls back to
 		// it for any variation that has none of its own, so it must be the
 		// lighter of the two rather than a guess.
-		if ( $is_variable ) {
-			$weight = $this->base_weight( $item );
+		if ( $is_variable && $this->may_write_weight( $product, $is_new ) ) {
+			$weight = $this->variation_weight( $item, array() );
 			$product->set_weight( null !== $weight ? (string) $weight : '' );
 		}
 
@@ -1816,9 +1856,8 @@ class BDZ_Etsy_Importer {
 	 * @return array { created, updated, removed }
 	 */
 	private function sync_variations( $product_id, array $item ) {
-		$counts      = array( 'created' => 0, 'updated' => 0, 'removed' => 0 );
-		$prefix      = $item['sku'] . '-';
-		$base_weight = $this->base_weight( $item );
+		$counts = array( 'created' => 0, 'updated' => 0, 'removed' => 0 );
+		$prefix = $item['sku'] . '-';
 
 		$existing = array();
 		$parent   = wc_get_product( $product_id );
@@ -1858,15 +1897,12 @@ class BDZ_Etsy_Importer {
 			$variation->set_attributes( $attributes );
 			$variation->set_regular_price( $variant['price'] );
 
-			// Etsy cannot vary weight by property, so the book's weight is
-			// applied here. The multiplier scales with the listing, which is
-			// what makes it work for multi-book bundles too: a five-kit listing
-			// weighing 5K becomes 5K + 5 books at the same ratio.
-			if ( null !== $base_weight ) {
-				$includes_book = BDZ_Etsy_Normalize::variant_includes_book( $variant['attributes'] );
-				$variation->set_weight(
-					(string) round( $base_weight * ( $includes_book ? $this->book_multiplier : 1.0 ), 3 )
-				);
+			// Etsy cannot vary weight by property, so the with-book weight is
+			// applied here from the store's own configured figures — but never
+			// over a weight someone has already corrected by hand.
+			if ( $this->may_write_weight( $variation, $is_new ) ) {
+				$weight = $this->variation_weight( $item, $variant['attributes'] );
+				$variation->set_weight( null !== $weight ? (string) $weight : '' );
 			}
 			$variation->set_manage_stock( true );
 			$variation->set_stock_quantity( max( 0, (int) $variant['quantity'] - $this->stock_buffer ) );
@@ -2656,8 +2692,9 @@ class BDZ_Etsy_Admin {
 					'sync_images'   => ! empty( $_POST['sync_images'] ) ? 1 : 0,
 					'skip_review'   => ! empty( $_POST['skip_review'] ) ? 1 : 0,
 					'draft_missing' => ! empty( $_POST['draft_missing'] ) ? 1 : 0,
-					'book_weight_enabled'    => ! empty( $_POST['book_weight_enabled'] ) ? 1 : 0,
-					'book_weight_multiplier' => isset( $_POST['book_weight_multiplier'] ) ? wp_unslash( $_POST['book_weight_multiplier'] ) : 3,
+					'kit_weight'           => isset( $_POST['kit_weight'] ) ? wp_unslash( $_POST['kit_weight'] ) : 22,
+					'kit_with_book_weight' => isset( $_POST['kit_with_book_weight'] ) ? wp_unslash( $_POST['kit_with_book_weight'] ) : 80,
+					'force_weights'        => ! empty( $_POST['force_weights'] ) ? 1 : 0,
 				);
 
 				// Only overwrite a stored credential if something other than the
@@ -3142,19 +3179,42 @@ class BDZ_Etsy_Admin {
 						<tr>
 							<th scope="row">Shipping weight</th>
 							<td>
-								<label>
-									<input type="checkbox" name="book_weight_enabled" value="1" <?php checked( $settings['book_weight_enabled'] ); ?>>
-									Multiply the weight of "with book" variations by
-								</label>
-								<input type="number" name="book_weight_multiplier" min="1" step="0.1" style="width:6em"
-									value="<?php echo esc_attr( $settings['book_weight_multiplier'] ); ?>">
+								<?php $unit = esc_html( get_option( 'woocommerce_weight_unit', 'oz' ) ); ?>
+								<p>
+									<label style="display:inline-block;min-width:11em">Kit only</label>
+									<input type="number" name="kit_weight" min="0" step="0.001" style="width:7em"
+										value="<?php echo esc_attr( $settings['kit_weight'] ); ?>"> <?php echo $unit; ?>
+								</p>
+								<p>
+									<label style="display:inline-block;min-width:11em">Kit with the book</label>
+									<input type="number" name="kit_with_book_weight" min="0" step="0.001" style="width:7em"
+										value="<?php echo esc_attr( $settings['kit_with_book_weight'] ); ?>"> <?php echo $unit; ?>
+								</p>
 								<p class="description">
-									Etsy cannot make an option affect shipping weight, so a kit and a
-									kit-with-book ship as the same weight there. The listing's Etsy weight
-									is treated as the kit <strong>without</strong> the book, and
-									"with book" variations are multiplied by this figure.
-									Because it is a multiplier it scales with multi-kit bundles.
+									Etsy cannot make an option affect shipping weight, so these are the
+									store's own figures. Variations whose <em>Book</em> option starts with
+									"with" get the second weight; everything else gets the first.
 									Only the <em>Book</em> property counts — "With Tools" is not a book.
+									Set a figure to <code>0</code> to fall back to whatever weight the
+									Etsy listing carries.
+								</p>
+								<p>
+									<label>
+										<input type="checkbox" name="force_weights" value="1" <?php checked( $settings['force_weights'] ); ?>>
+										Reapply these weights to existing products
+									</label>
+								</p>
+								<p class="description">
+									<strong>These are flat per product.</strong> A multi-kit bundle
+									(&ldquo;ACOTAR all five&rdquo;, &ldquo;Throne of Glass 8 Kit
+									bundle&rdquo;) is five or eight kits and that many books, so the flat
+									figure is far too light. Correct those by hand in the product.
+								</p>
+								<p class="description">
+									A weight already set on a product is <strong>never overwritten</strong>,
+									so hand corrections survive every sync. Products with no weight yet are
+									filled in. Tick the box above only when you have changed the figures and
+									want them pushed over everything.
 								</p>
 							</td>
 						</tr>

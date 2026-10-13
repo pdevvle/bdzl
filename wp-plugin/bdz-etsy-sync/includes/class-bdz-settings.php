@@ -39,8 +39,11 @@ class BDZ_Etsy_Settings {
 			'sync_images'    => 1,
 			'skip_review'    => 0,
 			'draft_missing'  => 1,
-			'book_weight_enabled'    => 1,
-			'book_weight_multiplier' => 3,
+			// Shipping weights in the store's own unit (oz here). 22 oz is the
+			// kit; 80 oz is 5 lb, the kit with the book in the box.
+			'kit_weight'           => 22,
+			'kit_with_book_weight' => 80,
+			'force_weights'        => 0,
 		);
 	}
 
@@ -133,12 +136,13 @@ class BDZ_Etsy_Settings {
 			case 'sync_images':
 			case 'skip_review':
 			case 'draft_missing':
-			case 'book_weight_enabled':
+			case 'force_weights':
 				return $value ? 1 : 0;
-			case 'book_weight_multiplier':
-				// Below 1 would make the kit-plus-book lighter than the kit.
-				$number = is_numeric( $value ) ? (float) $value : 3.0;
-				return max( 1.0, round( $number, 2 ) );
+			case 'kit_weight':
+			case 'kit_with_book_weight':
+				// Zero is meaningful: it means "use whatever Etsy reported".
+				$number = is_numeric( $value ) ? (float) $value : 0.0;
+				return max( 0.0, round( $number, 3 ) );
 			case 'redirect_uri':
 				return esc_url_raw( trim( (string) $value ) );
 			default:
